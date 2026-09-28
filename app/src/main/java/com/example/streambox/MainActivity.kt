@@ -5,7 +5,6 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
-import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.view.Gravity
@@ -229,9 +228,10 @@ class MainActivity : AppCompatActivity() {
             textSize=12f
             maxLines=3
         },LinearLayout.LayoutParams(-1,0,1f))
-        card.addView(button("Watch options"){
-            startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(online.watchUrl(m))))
+        card.addView(button("▶ Play in app"){
+            openOnlineMovie(m)
         },LinearLayout.LayoutParams(-1,dp(42)))
+        card.setOnClickListener { openOnlineMovie(m) }
         return card
     }
 
@@ -312,6 +312,13 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent(this,PlayerActivity::class.java).apply{
             putExtra("title",m.title)
             putExtra("url",m.videoUrl)
+        })
+    }
+
+    private fun openOnlineMovie(m:OnlineMovie){
+        startActivity(Intent(this,TrailerActivity::class.java).apply{
+            putExtra("movieId",m.id)
+            putExtra("title",m.title)
         })
     }
 
