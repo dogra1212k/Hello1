@@ -162,7 +162,7 @@ class MainActivity : AppCompatActivity() {
         })
         online.hindiHome { list,error ->
             runOnUiThread {
-                if(list!=null && list.isNotEmpty()) renderOnline("Hindi Movies • 30+ titles",list)
+                if(list!=null && list.isNotEmpty()) renderOnline("Hindi Movies • 3 × 3",list.take(9))
                 else {
                     renderMovies(filtered())
                     Toast.makeText(this,error ?: "Could not load Hindi movies",Toast.LENGTH_LONG).show()
