@@ -7,6 +7,8 @@ if (project.file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+val tmdbApiKey = providers.gradleProperty("TMDB_API_KEY").orElse("").get()
+
 android {
     namespace = "com.example.streambox"
     compileSdk = 35
@@ -15,8 +17,13 @@ android {
         applicationId = "com.example.streambox"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
+        buildConfigField("String", "TMDB_API_KEY", "\\"" + tmdbApiKey + "\\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {
