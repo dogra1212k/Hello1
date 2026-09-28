@@ -21,6 +21,7 @@ class TrailerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val movieId = intent.getIntExtra("movieId", 0)
+        val mediaType = intent.getStringExtra("mediaType") ?: "movie"
         val title = intent.getStringExtra("title") ?: "Movie"
         if (movieId == 0) {
             finish()
@@ -50,7 +51,7 @@ class TrailerActivity : AppCompatActivity() {
         root.addView(label, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         setContentView(root)
 
-        online.trailerKey(movieId) { key, error ->
+        online.trailerKey(mediaType, movieId) { key, error ->
             runOnUiThread {
                 loading.visibility = ProgressBar.GONE
                 if (key.isNullOrBlank()) {
