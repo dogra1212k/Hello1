@@ -2,29 +2,25 @@
 
 Netflix-जैसा free streaming starter, बिना premium/paywall के.
 
-## अभी मौजूद features
+## Features
 - Login / Signup
-- Local user accounts
-- Session handling
-- Admin-only dashboard
-- Admin code: 98789 (demo only)
-- Admin में registered users की list
-- Admin से user delete
-- Admin से movie add/remove
-- Admin से demo catalog reset
-- Home screen admin-managed catalog पढ़ती है
-- नया StreamBox app icon
+- Local fallback accounts
+- Firebase Auth-ready integration
+- Firestore-ready security model
+- Admin dashboard
+- User list/delete
+- Movie catalog add/remove/reset
 - Search, categories, My List
 - Full-screen video playback
+- StreamBox app icon
 
-## Storage
-अभी users और catalog इस Android device के SharedPreferences में store होते हैं। इसलिए यह single-device demo/admin system है।
+## Firebase mode
+Project में Firebase Auth और Firestore dependencies जुड़ी हैं। अगर `app/google-services.json` मौजूद है तो Firebase initialize हो सकता है। अगर config नहीं है तो app local fallback mode में चलता रहेगा।
 
-## Production security
-Production release के लिए Firebase Authentication / secure backend और server-side admin roles जोड़ना जरूरी है। Hard-coded admin code production में सुरक्षित नहीं है।
+Setup के लिए `FIREBASE_SETUP_HINDI.md` देखें।
 
-## Firebase next step
-Firebase Console में Android package `com.example.streambox` register करें और `google-services.json` दें। उसके बाद Auth और Firestore को cloud-backed बनाया जा सकता है।
+## Security
+Current local admin code `98789` सिर्फ demo fallback है। Production में Firestore role-based admin access use करें।
 
 ## Content rights
 सिर्फ अपनी, licensed, या public-domain videos stream करें.
