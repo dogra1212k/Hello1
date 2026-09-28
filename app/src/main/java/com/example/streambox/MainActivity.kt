@@ -41,6 +41,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshCatalog() {
+        movies=catalog.getMovies()
+        if (online.isConfigured()) {
+            loadHindiHome()
+            return
+        }
         if(firebase.isAvailable() && firebase.currentEmail()!=null) {
             firebase.loadMovies { cloud,error ->
                 if(cloud != null && cloud.isNotEmpty()) {
@@ -48,13 +53,11 @@ class MainActivity : AppCompatActivity() {
                     catalog.saveMovies(cloud)
                     renderMovies(filtered())
                 } else {
-                    movies=catalog.getMovies()
                     renderMovies(filtered())
                     if(error!=null) Toast.makeText(this,"Using offline catalog",Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
-            movies=catalog.getMovies()
             renderMovies(filtered())
         }
     }
@@ -102,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         searchBox=EditText(this).apply {
-            hint="Search movies online"
+            hint="Search movies, series, music & videos"
             setHintTextColor(Color.GRAY)
             setTextColor(Color.WHITE)
             setSingleLine(true)
@@ -111,11 +114,20 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(searchBox,LinearLayout.LayoutParams(-1,dp(48)))
 
+        val searchTypes=LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            setPadding(0,dp(6),0,0)
+        }
+        searchTypes.addView(button("All"){ runSearchFromBox() },LinearLayout.LayoutParams(0,dp(40),1f))
+        searchTypes.addView(button("Music"){ openYouTubeSearch("music") },LinearLayout.LayoutParams(0,dp(40),1f))
+        searchTypes.addView(button("Videos"){ openYouTubeSearch("video") },LinearLayout.LayoutParams(0,dp(40),1f))
+        root.addView(searchTypes)
+
         val tabs=LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
             setPadding(0,dp(8),0,dp(8))
         }
-        tabs.addView(button("Home"){renderMovies(filtered())},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Home"){loadHindiHome()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("Latest"){loadLatestOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("Series"){loadLatestSeries()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("My List"){renderMovies(movies.filter{isFavorite(it)})},LinearLayout.LayoutParams(0,dp(44),1f))
@@ -127,8 +139,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
 
         searchBox.setOnEditorActionListener { _,_,_->
-            val q=searchBox.text.toString().trim()
-            if(q.isNotEmpty()) searchOnline(q) else renderMovies(filtered())
+            runSearchFromBox()
             true
         }
         setContentView(root)
@@ -139,6 +150,24 @@ class MainActivity : AppCompatActivity() {
         val q=searchBox.text.toString().trim().lowercase()
         return if(q.isEmpty()) movies else movies.filter{
             it.title.lowercase().contains(q)||it.category.lowercase().contains(q)
+        }
+    }
+
+    private fun loadHindiHome() {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply {
+            text="Loading Hindi movies…"
+            setTextColor(Color.LTGRAY)
+            textSize=17f
+        })
+        online.hindiHome { list,error ->
+            runOnUiThread {
+                if(list!=null && list.isNotEmpty()) renderOnline("Hindi Movies • 30+ titles",list)
+                else {
+                    renderMovies(filtered())
+                    Toast.makeText(this,error ?: "Could not load Hindi movies",Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -178,26 +207,70 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun runSearchFromBox() {
+        val q=searchBox.text.toString().trim()
+        if(q.isNotEmpty()) searchOnline(q) else loadHindiHome()
+    }
+
     private fun searchOnline(query:String) {
         contentHolder.removeAllViews()
         contentHolder.addView(TextView(this).apply {
-            text="Searching online…"
+            text="Searching movies, series and online video…"
             setTextColor(Color.LTGRAY)
             textSize=17f
         })
-        online.search(query) { list,error ->
-            runOnUiThread {
-                if(list!=null) renderOnline("Search: $query",list)
-                else {
-                    renderMovies(filtered())
-                    Toast.makeText(this,error ?: "Online search unavailable",Toast.LENGTH_LONG).show()
+        online.search(query) { movieList,movieError ->
+            online.searchTv(query) { tvList,tvError ->
+                runOnUiThread {
+                    contentHolder.removeAllViews()
+                    appendOnlineSection("Movies", movieList ?: emptyList())
+                    appendOnlineSection("Series & Shows", tvList ?: emptyList())
+                    addYouTubeSearchSection(query)
+                    if(movieList==null && tvList==null) {
+                        Toast.makeText(this,movieError ?: tvError ?: "Online search unavailable",Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
+    private fun addYouTubeSearchSection(query:String) {
+        contentHolder.addView(TextView(this).apply{
+            text="Music & Videos"
+            setTextColor(Color.WHITE)
+            textSize=21f
+            setTypeface(typeface,Typeface.BOLD)
+            setPadding(0,dp(20),0,dp(8))
+        })
+        val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        row.addView(button("♫ Music"){ openYouTubeSearch("music") },LinearLayout.LayoutParams(0,dp(48),1f))
+        row.addView(button("▶ Videos"){ openYouTubeSearch("video") },LinearLayout.LayoutParams(0,dp(48),1f))
+        contentHolder.addView(row,LinearLayout.LayoutParams(-1,-2))
+        contentHolder.addView(TextView(this).apply {
+            text="YouTube online search for: $query"
+            setTextColor(Color.LTGRAY)
+            textSize=12f
+            setPadding(0,dp(6),0,dp(12))
+        })
+    }
+
+    private fun openYouTubeSearch(kind:String) {
+        val q=searchBox.text.toString().trim()
+        if(q.isEmpty()) {
+            Toast.makeText(this,"Type something in Search first",Toast.LENGTH_SHORT).show()
+            return
+        }
+        val suffix=if(kind=="music") " music" else ""
+        val url="https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode(q + suffix,"UTF-8")
+        startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
+    }
+
     private fun renderOnline(title:String,list:List<OnlineMovie>){
         contentHolder.removeAllViews()
+        appendOnlineSection(title,list)
+    }
+
+    private fun appendOnlineSection(title:String,list:List<OnlineMovie>){
         contentHolder.addView(TextView(this).apply{
             text=title
             setTextColor(Color.WHITE)
@@ -338,6 +411,7 @@ class MainActivity : AppCompatActivity() {
     private fun openOnlineMovie(m:OnlineMovie){
         startActivity(Intent(this,TrailerActivity::class.java).apply{
             putExtra("movieId",m.id)
+            putExtra("mediaType",m.mediaType)
             putExtra("title",m.title)
         })
     }
