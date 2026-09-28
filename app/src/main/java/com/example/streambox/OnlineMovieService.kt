@@ -35,6 +35,7 @@ class OnlineMovieService {
         requestMovies(
             "https://api.themoviedb.org/3/movie/now_playing" +
                 "?api_key=${enc(apiKey)}&language=en-US&page=1&region=IN",
+            "movie",
             callback
         )
     }
@@ -43,6 +44,7 @@ class OnlineMovieService {
         requestMovies(
             "https://api.themoviedb.org/3/search/movie" +
                 "?api_key=${enc(apiKey)}&language=hi-IN&include_adult=false&page=1&query=${enc(query)}",
+            "movie",
             callback
         )
     }
