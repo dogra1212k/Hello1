@@ -9,7 +9,7 @@ class CatalogStore(context: Context) {
 
     private val defaults = listOf(
         Movie("Big Buck Bunny","Animation","Open movie demo. Replace this URL with content you own or are licensed to stream.","https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg"),
-        Movie("Elephant Dream","Sci‑Fi","Open movie demo for testing the streaming player.","https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg"),
+        Movie("Elephant Dream","Sci-Fi","Open movie demo for testing the streaming player.","https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg"),
         Movie("For Bigger Blazes","Action","Short demo video for your home feed.","https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg"),
         Movie("For Bigger Escape","Adventure","Short demo video. Add your own catalog later.","https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerEscapes.jpg")
     )
@@ -25,7 +25,8 @@ class CatalogStore(context: Context) {
                     o.optString("category"),
                     o.optString("description"),
                     o.optString("videoUrl"),
-                    o.optString("posterUrl")
+                    o.optString("posterUrl"),
+                    o.optString("id")
                 )
             }
         } catch (_: Exception) {
@@ -42,6 +43,7 @@ class CatalogStore(context: Context) {
                 put("description", m.description)
                 put("videoUrl", m.videoUrl)
                 put("posterUrl", m.posterUrl)
+                put("id", m.id)
             })
         }
         prefs.edit().putString("movies", arr.toString()).apply()

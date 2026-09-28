@@ -18,6 +18,7 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("favorites", MODE_PRIVATE) }
     private val session by lazy { SessionManager(this) }
     private val catalog by lazy { CatalogStore(this) }
+    private val firebase by lazy { FirebaseGateway(this) }
     private var movies: List<Movie> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,8 +33,24 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::contentHolder.isInitialized) {
-            movies = catalog.getMovies()
+        if (::contentHolder.isInitialized) refreshCatalog()
+    }
+
+    private fun refreshCatalog() {
+        if(firebase.isAvailable() && firebase.currentEmail()!=null) {
+            firebase.loadMovies { cloud,error ->
+                if(cloud != null && cloud.isNotEmpty()) {
+                    movies=cloud
+                    catalog.saveMovies(cloud)
+                    renderMovies(filtered())
+                } else {
+                    movies=catalog.getMovies()
+                    renderMovies(filtered())
+                    if(error!=null) Toast.makeText(this,"Using offline catalog",Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            movies=catalog.getMovies()
             renderMovies(filtered())
         }
     }
@@ -64,6 +81,7 @@ class MainActivity : AppCompatActivity() {
                 if(session.isAdmin()) {
                     startActivity(Intent(this@MainActivity,AdminActivity::class.java))
                 } else {
+                    firebase.signOut()
                     session.logout()
                     startActivity(Intent(this@MainActivity,AuthActivity::class.java))
                     finishAffinity()
@@ -72,9 +90,8 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(top)
-
         root.addView(TextView(this).apply {
-            text="${session.email()} • Free streaming • No premium tier"
+            text="${session.email()} • ${if(firebase.isAvailable()) "Cloud" else "Local"} mode"
             setTextColor(Color.LTGRAY)
             textSize=13f
             setPadding(0,0,0,dp(12))
@@ -94,9 +111,8 @@ class MainActivity : AppCompatActivity() {
             orientation=LinearLayout.HORIZONTAL
             setPadding(0,dp(8),0,dp(8))
         }
-
-        tabs.addView(button("Home"){ renderMovies(filtered()) },LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("My List"){ renderMovies(movies.filter{isFavorite(it)}) },LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Home"){renderMovies(filtered())},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("My List"){renderMovies(movies.filter{isFavorite(it)})},LinearLayout.LayoutParams(0,dp(44),1f))
         root.addView(tabs)
 
         val scroll=ScrollView(this)
@@ -104,20 +120,15 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(contentHolder)
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
 
-        searchBox.setOnEditorActionListener { _,_,_->
-            renderMovies(filtered())
-            false
-        }
-
+        searchBox.setOnEditorActionListener { _,_,_-> renderMovies(filtered()); false }
         setContentView(root)
-        movies = catalog.getMovies()
-        renderMovies(movies)
+        refreshCatalog()
     }
 
     private fun filtered():List<Movie>{
         val q=searchBox.text.toString().trim().lowercase()
         return if(q.isEmpty()) movies else movies.filter{
-            it.title.lowercase().contains(q) || it.category.lowercase().contains(q)
+            it.title.lowercase().contains(q)||it.category.lowercase().contains(q)
         }
     }
 
@@ -128,11 +139,9 @@ class MainActivity : AppCompatActivity() {
                 text="No titles found."
                 setTextColor(Color.LTGRAY)
                 textSize=17f
-                setPadding(0,dp(24),0,0)
             })
             return
         }
-
         list.groupBy{it.category}.forEach{(cat,items)->
             contentHolder.addView(TextView(this).apply{
                 text=cat
@@ -141,7 +150,6 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(typeface,Typeface.BOLD)
                 setPadding(0,dp(20),0,dp(8))
             })
-
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
             val hsv=HorizontalScrollView(this).apply{
                 isHorizontalScrollBarEnabled=false
@@ -159,36 +167,31 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(8),dp(8),dp(8),dp(8))
             layoutParams=LinearLayout.LayoutParams(dp(190),dp(270)).apply{setMargins(0,0,dp(12),0)}
         }
-
         val poster=ImageView(this).apply{
             setBackgroundColor(Color.DKGRAY)
             scaleType=ImageView.ScaleType.CENTER_CROP
         }
         card.addView(poster,LinearLayout.LayoutParams(-1,dp(155)))
         loadImage(m.posterUrl,poster)
-
         card.addView(TextView(this).apply{
             text=m.title
             setTextColor(Color.WHITE)
             textSize=16f
             setTypeface(typeface,Typeface.BOLD)
         })
-
         card.addView(TextView(this).apply{
             text=m.description
             setTextColor(Color.LTGRAY)
             textSize=12f
             maxLines=2
         },LinearLayout.LayoutParams(-1,0,1f))
-
-        val actions=LinearLayout(this)
-        actions.addView(button("▶ Play"){play(m)},LinearLayout.LayoutParams(0,dp(42),1f))
-        actions.addView(button(if(isFavorite(m))"★" else "☆"){
+        val a=LinearLayout(this)
+        a.addView(button("▶ Play"){play(m)},LinearLayout.LayoutParams(0,dp(42),1f))
+        a.addView(button(if(isFavorite(m))"★" else "☆"){
             toggleFavorite(m)
             renderMovies(filtered())
         },LinearLayout.LayoutParams(dp(52),dp(42)))
-
-        card.addView(actions)
+        card.addView(a)
         card.setOnClickListener{play(m)}
         return card
     }
@@ -208,10 +211,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun toggleFavorite(m:Movie){
-        prefs.edit().putBoolean(m.title,!isFavorite(m)).apply()
-    }
-
+    private fun toggleFavorite(m:Movie){prefs.edit().putBoolean(m.title,!isFavorite(m)).apply()}
     private fun isFavorite(m:Movie)=prefs.getBoolean(m.title,false)
 
     private fun loadImage(url:String,target:ImageView){

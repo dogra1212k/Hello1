@@ -5,5 +5,6 @@ data class Movie(
     val category: String,
     val description: String,
     val videoUrl: String,
-    val posterUrl: String
+    val posterUrl: String,
+    val id: String = ""
 )

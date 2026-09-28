@@ -12,7 +12,9 @@ class AdminActivity : AppCompatActivity() {
     private val session by lazy { SessionManager(this) }
     private val users by lazy { getSharedPreferences("users", MODE_PRIVATE) }
     private val catalog by lazy { CatalogStore(this) }
+    private val firebase by lazy { FirebaseGateway(this) }
     private lateinit var body: LinearLayout
+    private var cloudMovies: List<Movie> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +40,11 @@ class AdminActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
 
+        root.addView(TextView(this).apply {
+            text=if(firebase.isAvailable()) "Firebase admin mode" else "Local fallback admin"
+            setTextColor(Color.LTGRAY)
+        })
+
         val nav=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         nav.addView(navButton("Dashboard"){showDashboard()},LinearLayout.LayoutParams(0,dp(46),1f))
         nav.addView(navButton("Users"){showUsers()},LinearLayout.LayoutParams(0,dp(46),1f))
@@ -57,6 +64,7 @@ class AdminActivity : AppCompatActivity() {
             startActivity(Intent(this@AdminActivity, MainActivity::class.java))
         },LinearLayout.LayoutParams(0,dp(48),1f))
         bottom.addView(navButton("Logout"){
+            firebase.signOut()
             session.logout()
             startActivity(Intent(this@AdminActivity, AuthActivity::class.java))
             finishAffinity()
@@ -68,21 +76,45 @@ class AdminActivity : AppCompatActivity() {
 
     private fun showDashboard() {
         body.removeAllViews()
-        body.addView(info("Registered users", users.all.size.toString()))
-        body.addView(info("Catalog titles", catalog.getMovies().size.toString()))
+        body.addView(info("Mode", if(firebase.isAvailable()) "Firebase cloud" else "Local"))
         body.addView(info("Admin access", "Active"))
-        body.addView(TextView(this).apply {
-            text="Changes made here are stored on this device and appear in the Home catalog immediately."
-            setTextColor(Color.LTGRAY)
-            textSize=14f
-            setPadding(0,dp(12),0,0)
-        })
+        if(firebase.isAvailable()) {
+            firebase.loadMovies { list,_ ->
+                body.addView(info("Cloud catalog titles", (list?.size ?: 0).toString()))
+            }
+        } else {
+            body.addView(info("Registered users", users.all.size.toString()))
+            body.addView(info("Catalog titles", catalog.getMovies().size.toString()))
+        }
     }
 
     private fun showUsers() {
         body.removeAllViews()
-        val all=users.all.keys.sorted()
+        if(firebase.isAvailable()) {
+            body.addView(TextView(this).apply{
+                text="Firebase users"
+                setTextColor(Color.WHITE)
+                textSize=18f
+            })
+            firebase.listUsers { list,error ->
+                if(list==null) {
+                    body.addView(info("Users", error ?: "Could not load users"))
+                } else if(list.isEmpty()) {
+                    body.addView(info("Users","No user profiles found"))
+                } else {
+                    list.forEach { email -> body.addView(info("User",email)) }
+                }
+            }
+            body.addView(TextView(this).apply{
+                text="Deleting Firebase Authentication accounts requires a trusted server/Admin SDK, so the Android client only displays cloud users."
+                setTextColor(Color.LTGRAY)
+                textSize=13f
+                setPadding(0,dp(12),0,0)
+            })
+            return
+        }
 
+        val all=users.all.keys.sorted()
         if(all.isEmpty()) {
             body.addView(info("Users", "No registered users yet"))
             return
@@ -99,62 +131,84 @@ class AdminActivity : AppCompatActivity() {
                 setTextColor(Color.WHITE)
                 textSize=16f
             },LinearLayout.LayoutParams(0,dp(48),1f))
-
             row.addView(Button(this).apply {
                 text="Delete"
                 isAllCaps=false
                 setOnClickListener {
-                    AlertDialog.Builder(this@AdminActivity)
-                        .setTitle("Delete user?")
-                        .setMessage(email)
-                        .setPositiveButton("Delete"){_,_->
-                            users.edit().remove(email).apply()
-                            showUsers()
-                        }
-                        .setNegativeButton("Cancel",null)
-                        .show()
+                    users.edit().remove(email).apply()
+                    showUsers()
                 }
             },LinearLayout.LayoutParams(dp(100),dp(48)))
-
-            val lp=LinearLayout.LayoutParams(-1,-2)
-            lp.setMargins(0,0,0,dp(10))
-            body.addView(row,lp)
+            body.addView(row)
         }
     }
 
     private fun showCatalog() {
         body.removeAllViews()
-
         body.addView(Button(this).apply {
             text="+ Add movie"
             isAllCaps=false
             setOnClickListener { showAddMovieDialog() }
         })
 
-        body.addView(Button(this).apply {
-            text="Reset demo catalog"
-            isAllCaps=false
-            setOnClickListener {
-                catalog.resetDefaults()
-                showCatalog()
+        if(firebase.isAvailable()) {
+            firebase.loadMovies { list,error ->
+                cloudMovies=list ?: emptyList()
+                if(list==null) {
+                    body.addView(info("Catalog",error ?: "Could not load"))
+                    return@loadMovies
+                }
+                if(list.isEmpty()) body.addView(info("Catalog","No cloud movies yet"))
+                list.forEach { movie -> body.addView(cloudMovieRow(movie)) }
             }
-        })
-
-        val movies=catalog.getMovies()
-        movies.forEachIndexed { index, movie ->
-            val row=LinearLayout(this).apply {
-                orientation=LinearLayout.HORIZONTAL
-                setBackgroundColor(Color.rgb(28,28,28))
-                setPadding(dp(12),dp(8),dp(8),dp(8))
+        } else {
+            body.addView(Button(this).apply {
+                text="Reset demo catalog"
+                isAllCaps=false
+                setOnClickListener {
+                    catalog.resetDefaults()
+                    showCatalog()
+                }
+            })
+            catalog.getMovies().forEachIndexed { index,movie ->
+                body.addView(localMovieRow(index,movie))
             }
+        }
+    }
 
-            row.addView(TextView(this).apply {
+    private fun cloudMovieRow(movie: Movie): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(28,28,28))
+            setPadding(dp(12),dp(8),dp(8),dp(8))
+            addView(TextView(this@AdminActivity).apply {
                 text="${movie.title}\n${movie.category}"
                 setTextColor(Color.WHITE)
                 textSize=16f
             },LinearLayout.LayoutParams(0,dp(66),1f))
+            addView(Button(this@AdminActivity).apply {
+                text="Remove"
+                isAllCaps=false
+                setOnClickListener {
+                    firebase.deleteMovie(movie) { ok,msg ->
+                        if(ok) showCatalog() else Toast.makeText(this@AdminActivity,msg ?: "Delete failed",Toast.LENGTH_LONG).show()
+                    }
+                }
+            },LinearLayout.LayoutParams(dp(110),dp(56)))
+        }
+    }
 
-            row.addView(Button(this).apply {
+    private fun localMovieRow(index:Int, movie:Movie): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(28,28,28))
+            setPadding(dp(12),dp(8),dp(8),dp(8))
+            addView(TextView(this@AdminActivity).apply {
+                text="${movie.title}\n${movie.category}"
+                setTextColor(Color.WHITE)
+                textSize=16f
+            },LinearLayout.LayoutParams(0,dp(66),1f))
+            addView(Button(this@AdminActivity).apply {
                 text="Remove"
                 isAllCaps=false
                 setOnClickListener {
@@ -162,10 +216,6 @@ class AdminActivity : AppCompatActivity() {
                     showCatalog()
                 }
             },LinearLayout.LayoutParams(dp(110),dp(56)))
-
-            val lp=LinearLayout.LayoutParams(-1,-2)
-            lp.setMargins(0,0,0,dp(10))
-            body.addView(row,lp)
         }
     }
 
@@ -174,47 +224,41 @@ class AdminActivity : AppCompatActivity() {
             orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(8),dp(18),0)
         }
-
         val title=input("Title")
         val category=input("Category")
         val description=input("Description")
         val video=input("Video URL")
         val poster=input("Poster URL")
-
         listOf(title,category,description,video,poster).forEach { wrap.addView(it) }
 
         AlertDialog.Builder(this)
             .setTitle("Add movie")
             .setView(wrap)
             .setPositiveButton("Add"){_,_->
-                val t=title.text.toString().trim()
-                val c=category.text.toString().trim()
-                val d=description.text.toString().trim()
-                val v=video.text.toString().trim()
-                val p=poster.text.toString().trim()
-
-                if(t.isNotBlank() && c.isNotBlank() && v.startsWith("http")) {
-                    catalog.add(Movie(t,c,d,v,p))
-                    showCatalog()
-                } else {
+                val movie=Movie(
+                    title.text.toString().trim(),
+                    category.text.toString().trim(),
+                    description.text.toString().trim(),
+                    video.text.toString().trim(),
+                    poster.text.toString().trim()
+                )
+                if(movie.title.isBlank() || movie.category.isBlank() || !movie.videoUrl.startsWith("http")) {
                     Toast.makeText(this,"Title, category and valid video URL are required",Toast.LENGTH_LONG).show()
+                } else if(firebase.isAvailable()) {
+                    firebase.addMovie(movie) { ok,msg ->
+                        if(ok) showCatalog() else Toast.makeText(this,msg ?: "Add failed",Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    catalog.add(movie)
+                    showCatalog()
                 }
             }
             .setNegativeButton("Cancel",null)
             .show()
     }
 
-    private fun input(h:String)=EditText(this).apply {
-        hint=h
-        setSingleLine(true)
-    }
-
-    private fun navButton(label:String, action:()->Unit)=Button(this).apply {
-        text=label
-        isAllCaps=false
-        setOnClickListener { action() }
-    }
-
+    private fun input(h:String)=EditText(this).apply { hint=h; setSingleLine(true) }
+    private fun navButton(label:String, action:()->Unit)=Button(this).apply { text=label; isAllCaps=false; setOnClickListener { action() } }
     private fun info(a:String,b:String)=TextView(this).apply {
         text="$a\n$b"
         setTextColor(Color.WHITE)
@@ -225,6 +269,5 @@ class AdminActivity : AppCompatActivity() {
         p.setMargins(0,0,0,dp(12))
         layoutParams=p
     }
-
     private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
 }

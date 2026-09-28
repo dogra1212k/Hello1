@@ -1,26 +1,34 @@
 # StreamBox Free — Android App
 
-Netflix-जैसा free streaming starter, बिना premium/paywall के.
+अब project में दो modes हैं:
 
-## Features
-- Login / Signup
-- Local fallback accounts
-- Firebase Auth-ready integration
-- Firestore-ready security model
-- Admin dashboard
-- User list/delete
-- Movie catalog add/remove/reset
-- Search, categories, My List
-- Full-screen video playback
-- StreamBox app icon
+## Firebase cloud mode
+अगर `app/google-services.json` मौजूद है:
+- Login Firebase Authentication से
+- Signup Firebase Authentication से
+- User profile Firestore `users` collection में
+- Admin role Firestore के `role: "admin"` से
+- Movie catalog Firestore `movies` collection से
+- Admin cloud catalog में movie add/remove कर सकता है
+- Home cloud catalog load करती है
+- Offline होने पर cached local catalog fallback मिलता है
 
-## Firebase mode
-Project में Firebase Auth और Firestore dependencies जुड़ी हैं। अगर `app/google-services.json` मौजूद है तो Firebase initialize हो सकता है। अगर config नहीं है तो app local fallback mode में चलता रहेगा।
+## Local fallback mode
+अगर Firebase config नहीं है:
+- Local Login / Signup
+- Admin code `98789`
+- Local user management
+- Local movie catalog management
 
-Setup के लिए `FIREBASE_SETUP_HINDI.md` देखें।
+## Firebase admin
+Production में admin user के Firestore document:
+`users/{uid}`
+पर:
+`role: "admin"`
+set करें।
 
-## Security
-Current local admin code `98789` सिर्फ demo fallback है। Production में Firestore role-based admin access use करें।
+## Important security
+Firebase Authentication user को Android client से किसी दूसरे user के रूप में delete नहीं किया जा सकता। इसके लिए trusted backend / Firebase Admin SDK चाहिए। इसलिए cloud admin screen users को list करती है, लेकिन Auth account deletion client से नहीं करती।
 
 ## Content rights
 सिर्फ अपनी, licensed, या public-domain videos stream करें.
