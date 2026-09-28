@@ -32,9 +32,10 @@ class OnlineMovieService {
     }
 
     fun latestHindi(callback: (List<OnlineMovie>?, String?) -> Unit) {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         requestMovies(
             "https://api.themoviedb.org/3/discover/movie" +
-                "?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=primary_release_date.desc&include_adult=false&page=1&region=IN",
+                "?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=primary_release_date.desc&include_adult=false&page=1&region=IN&primary_release_date.lte=${enc(today)}",
             "movie",
             callback
         )
