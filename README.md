@@ -25,3 +25,15 @@ The key is read by `app/build.gradle.kts` and exposed to the app through `BuildC
 - Watch-options link
 - Download button for direct video URLs that you own or are licensed to distribute
 - Login / signup / admin flow
+
+
+## Build APK with GitHub Actions
+
+1. Open the repository on GitHub.
+2. Go to **Settings → Secrets and variables → Actions**.
+3. Create a repository secret named `TMDB_API_KEY` and paste your TMDB API key as its value.
+4. Open the **Actions** tab.
+5. Run **Android Build**.
+6. After the build finishes, download the `streambox-debug-apk` artifact.
+
+If the TMDB secret is missing, the app can still build, but online Latest/Search will report that the TMDB key is not configured.
