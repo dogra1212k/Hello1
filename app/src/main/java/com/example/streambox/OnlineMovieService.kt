@@ -31,6 +31,15 @@ class OnlineMovieService {
         )
     }
 
+    fun latestHindi(callback: (List<OnlineMovie>?, String?) -> Unit) {
+        requestMovies(
+            "https://api.themoviedb.org/3/discover/movie" +
+                "?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=primary_release_date.desc&include_adult=false&page=1&region=IN",
+            "movie",
+            callback
+        )
+    }
+
     fun latest(callback: (List<OnlineMovie>?, String?) -> Unit) {
         requestMovies(
             "https://api.themoviedb.org/3/movie/now_playing" +
