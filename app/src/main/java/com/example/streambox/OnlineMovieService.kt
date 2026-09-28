@@ -20,7 +20,7 @@ class OnlineMovieService {
     fun isConfigured(): Boolean = apiKey.isNotBlank()
 
     fun latest(callback: (List<OnlineMovie>?, String?) -> Unit) {
-        request(
+        requestMovies(
             "https://api.themoviedb.org/3/movie/now_playing" +
                 "?api_key=${enc(apiKey)}&language=en-US&page=1&region=IN",
             callback
@@ -28,17 +28,14 @@ class OnlineMovieService {
     }
 
     fun search(query: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
-        request(
+        requestMovies(
             "https://api.themoviedb.org/3/search/movie" +
                 "?api_key=${enc(apiKey)}&language=en-US&include_adult=false&page=1&query=${enc(query)}",
             callback
         )
     }
 
-    fun watchUrl(movie: OnlineMovie): String =
-        "https://www.themoviedb.org/movie/${movie.id}/watch"
-
-    private fun request(url: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
+    fun trailerKey(movieId: Int, callback: (String?, String?) -> Unit) {
         if (!isConfigured()) {
             callback(null, "TMDB API key is not configured")
             return
@@ -46,23 +43,47 @@ class OnlineMovieService {
 
         thread {
             try {
-                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 10000
-                    readTimeout = 10000
-                    requestMethod = "GET"
-                    setRequestProperty("Accept", "application/json")
+                val url = "https://api.themoviedb.org/3/movie/$movieId/videos" +
+                    "?api_key=${enc(apiKey)}&language=en-US"
+                val body = get(url)
+                val arr = JSONObject(body).optJSONArray("results")
+                var fallback: String? = null
+                var officialTrailer: String? = null
+
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        if (o.optString("site") != "YouTube") continue
+                        val key = o.optString("key")
+                        if (key.isBlank()) continue
+                        if (fallback == null) fallback = key
+                        val type = o.optString("type")
+                        val official = o.optBoolean("official", false)
+                        if (type.equals("Trailer", true) && official) {
+                            officialTrailer = key
+                            break
+                        }
+                        if (officialTrailer == null && type.equals("Trailer", true)) {
+                            officialTrailer = key
+                        }
+                    }
                 }
+                callback(officialTrailer ?: fallback, null)
+            } catch (e: Exception) {
+                callback(null, e.message ?: "Could not load trailer")
+            }
+        }
+    }
 
-                val code = conn.responseCode
-                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                    .bufferedReader()
-                    .use { it.readText() }
+    private fun requestMovies(url: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
+        if (!isConfigured()) {
+            callback(null, "TMDB API key is not configured")
+            return
+        }
 
-                if (code !in 200..299) {
-                    callback(null, "Online movie service error ($code)")
-                    return@thread
-                }
-
+        thread {
+            try {
+                val body = get(url)
                 val arr = JSONObject(body).optJSONArray("results")
                 val items = mutableListOf<OnlineMovie>()
                 if (arr != null) {
@@ -84,6 +105,21 @@ class OnlineMovieService {
                 callback(null, e.message ?: "Network error")
             }
         }
+    }
+
+    private fun get(url: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 10000
+            requestMethod = "GET"
+            setRequestProperty("Accept", "application/json")
+        }
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            .bufferedReader()
+            .use { it.readText() }
+        if (code !in 200..299) error("Online movie service error ($code)")
+        return body
     }
 
     private fun enc(value: String): String =
