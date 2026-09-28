@@ -146,7 +146,7 @@ class AdminActivity : AppCompatActivity() {
     private fun showCatalog() {
         body.removeAllViews()
         body.addView(Button(this).apply {
-            text="+ Add movie"
+            text="+ Add movie / series"
             isAllCaps=false
             setOnClickListener { showAddMovieDialog() }
         })
@@ -232,7 +232,7 @@ class AdminActivity : AppCompatActivity() {
         listOf(title,category,description,video,poster).forEach { wrap.addView(it) }
 
         AlertDialog.Builder(this)
-            .setTitle("Add movie")
+            .setTitle("Add movie / series")
             .setView(wrap)
             .setPositiveButton("Add"){_,_->
                 val movie=Movie(
