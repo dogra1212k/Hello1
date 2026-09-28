@@ -19,7 +19,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "1.3"
-        buildConfigField("String", "TMDB_API_KEY", "\\"" + tmdbApiKey + "\\"")
+        buildConfigField("String", "TMDB_API_KEY", "\"\\\"" + tmdbApiKey + "\\\"\"")
     }
 
     buildFeatures {
