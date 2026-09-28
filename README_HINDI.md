@@ -1,36 +1,25 @@
-# StreamBox Free — Android Demo
+# StreamBox Free — Android App
 
-यह Netflix-जैसा free streaming app starter है। इसमें कोई premium/paywall नहीं है।
+Netflix-जैसा free streaming starter, बिना premium/paywall के.
 
-## इसमें क्या है
-- Home feed
-- Categories
-- Search
+## अभी मौजूद features
+- Login
+- Signup
+- Local user accounts
+- Session handling
+- Admin-only dashboard
+- Admin code: 98789 (demo only)
+- नया StreamBox app icon
+- Home, categories, search
 - My List / Favorites
 - Full-screen video playback
-- Remote poster loading
-- Internet streaming
-- कोई subscription/premium tier नहीं
+- Demo streaming catalog
 
-## जरूरी बात
-केवल वही videos जोड़ें जिनके streaming/distribution rights आपके पास हों, या जो public-domain / properly licensed हों। Netflix या किसी दूसरे paid service की protected content को बिना अनुमति जोड़ना उचित नहीं है।
+## Security note
+Current login/signup local SharedPreferences demo है. Production release के लिए Firebase Authentication और server-side admin roles जोड़ना जरूरी है. Hard-coded admin code production में सुरक्षित नहीं है.
 
-## Android Studio / AndroidIDE में खोलना
-1. ZIP extract करें।
-2. `StreamBoxFree` folder को Android Studio या AndroidIDE में Open Project करें।
-3. Gradle sync होने दें।
-4. Run/Build APK करें।
+## Firebase जोड़ने के लिए
+Firebase Console में Android app package `com.example.streambox` बनाएं और `google-services.json` डाउनलोड करें. उसे `app/google-services.json` में रखने के बाद Firebase Auth/Firestore integration किया जा सकता है.
 
-## अपनी movies कैसे जोड़ें
-`app/src/main/java/com/example/streambox/MainActivity.kt` में `movies = listOf(...)` खोजें।
-हर item में title, category, description, videoUrl और posterUrl बदलें।
-
-## अगला upgrade
-- Login / signup
-- Admin panel
-- Firebase catalog
-- Continue watching
-- Download for offline (only for licensed content)
-- Hindi UI
-- Ads-supported free model
-- Chromecast / TV UI
+## Content rights
+सिर्फ अपनी, licensed, या public-domain videos stream करें.
