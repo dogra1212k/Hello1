@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
             alignmentMode=GridLayout.ALIGN_BOUNDS
             useDefaultMargins=false
         }
-        val width=(resources.displayMetrics.widthPixels-dp(32)-dp(16))/3
+        val tileWidth=(resources.displayMetrics.widthPixels-dp(32)-dp(16))/3
         queries.forEachIndexed { i,q ->
             val card=LinearLayout(this).apply {
                 orientation=LinearLayout.VERTICAL
@@ -223,7 +223,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(6),dp(8),dp(6),dp(8))
                 setBackgroundColor(Color.rgb(24,24,24))
                 layoutParams=GridLayout.LayoutParams().apply {
-                    width=width
+                    this.width=tileWidth
                     height=dp(128)
                     setMargins(dp(2),dp(2),dp(2),dp(2))
                 }
