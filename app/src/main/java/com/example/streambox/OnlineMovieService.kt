@@ -11,13 +11,25 @@ data class OnlineMovie(
     val title: String,
     val overview: String,
     val posterUrl: String,
-    val releaseDate: String
+    val releaseDate: String,
+    val mediaType: String = "movie"
 )
 
 class OnlineMovieService {
     private val apiKey = BuildConfig.TMDB_API_KEY.trim()
 
     fun isConfigured(): Boolean = apiKey.isNotBlank()
+
+    fun hindiHome(callback: (List<OnlineMovie>?, String?) -> Unit) {
+        requestMany(
+            listOf(
+                "https://api.themoviedb.org/3/discover/movie?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=popularity.desc&include_adult=false&page=1&region=IN",
+                "https://api.themoviedb.org/3/discover/movie?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=popularity.desc&include_adult=false&page=2&region=IN"
+            ),
+            "movie",
+            callback
+        )
+    }
 
     fun latest(callback: (List<OnlineMovie>?, String?) -> Unit) {
         requestMovies(
@@ -30,7 +42,16 @@ class OnlineMovieService {
     fun search(query: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
         requestMovies(
             "https://api.themoviedb.org/3/search/movie" +
-                "?api_key=${enc(apiKey)}&language=en-US&include_adult=false&page=1&query=${enc(query)}",
+                "?api_key=${enc(apiKey)}&language=hi-IN&include_adult=false&page=1&query=${enc(query)}",
+            callback
+        )
+    }
+
+    fun searchTv(query: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
+        requestMovies(
+            "https://api.themoviedb.org/3/search/tv" +
+                "?api_key=${enc(apiKey)}&language=hi-IN&include_adult=false&page=1&query=${enc(query)}",
+            "tv",
             callback
         )
     }
@@ -38,12 +59,13 @@ class OnlineMovieService {
     fun latestTv(callback: (List<OnlineMovie>?, String?) -> Unit) {
         requestMovies(
             "https://api.themoviedb.org/3/tv/on_the_air" +
-                "?api_key=${enc(apiKey)}&language=en-US&page=1",
+                "?api_key=${enc(apiKey)}&language=hi-IN&page=1",
+            "tv",
             callback
         )
     }
 
-    fun trailerKey(movieId: Int, callback: (String?, String?) -> Unit) {
+    fun trailerKey(mediaType: String, movieId: Int, callback: (String?, String?) -> Unit) {
         if (!isConfigured()) {
             callback(null, "TMDB API key is not configured")
             return
@@ -51,7 +73,8 @@ class OnlineMovieService {
 
         thread {
             try {
-                val url = "https://api.themoviedb.org/3/movie/$movieId/videos" +
+                val safeType = if (mediaType == "tv") "tv" else "movie"
+                val url = "https://api.themoviedb.org/3/$safeType/$movieId/videos" +
                     "?api_key=${enc(apiKey)}&language=en-US"
                 val body = get(url)
                 val arr = JSONObject(body).optJSONArray("results")
@@ -83,7 +106,42 @@ class OnlineMovieService {
         }
     }
 
-    private fun requestMovies(url: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
+    private fun requestMany(urls: List<String>, mediaType: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
+        if (!isConfigured()) {
+            callback(null, "TMDB API key is not configured")
+            return
+        }
+        thread {
+            try {
+                val all = mutableListOf<OnlineMovie>()
+                urls.forEach { url ->
+                    val body = get(url)
+                    val arr = JSONObject(body).optJSONArray("results")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val o = arr.optJSONObject(i) ?: continue
+                            val posterPath = o.optString("poster_path")
+                            all += OnlineMovie(
+                                id = o.optInt("id"),
+                                title = o.optString("title").ifBlank {
+                                    o.optString("name").ifBlank { o.optString("original_title").ifBlank { o.optString("original_name") } }
+                                },
+                                overview = o.optString("overview"),
+                                posterUrl = if (posterPath.isBlank() || posterPath == "null") "" else "https://image.tmdb.org/t/p/w500$posterPath",
+                                releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") },
+                                mediaType = mediaType
+                            )
+                        }
+                    }
+                }
+                callback(all.distinctBy { it.id }.take(40), null)
+            } catch (e: Exception) {
+                callback(null, e.message ?: "Network error")
+            }
+        }
+    }
+
+    private fun requestMovies(url: String, mediaType: String = "movie", callback: (List<OnlineMovie>?, String?) -> Unit) {
         if (!isConfigured()) {
             callback(null, "TMDB API key is not configured")
             return
@@ -106,7 +164,8 @@ class OnlineMovieService {
                             overview = o.optString("overview"),
                             posterUrl = if (posterPath.isBlank() || posterPath == "null") ""
                                 else "https://image.tmdb.org/t/p/w500$posterPath",
-                            releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") }
+                            releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") },
+                            mediaType = mediaType
                         )
                     }
                 }
