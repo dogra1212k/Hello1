@@ -42,3 +42,5 @@ If the TMDB secret is missing, the app can still build, but online Latest/Search
 Build automation status: configured.
 
 TMDB secret recheck build trigger.
+
+Latest 3x3 media update build trigger.
