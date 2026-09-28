@@ -128,9 +128,9 @@ class MainActivity : AppCompatActivity() {
             setPadding(0,dp(8),0,dp(8))
         }
         tabs.addView(button("Home"){loadHindiHome()},LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("Latest"){loadLatestOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Latest"){loadLatestHindiOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Music"){loadMusicVideos()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("Series"){loadLatestSeries()},LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("My List"){renderMovies(movies.filter{isFavorite(it)})},LinearLayout.LayoutParams(0,dp(44),1f))
         root.addView(tabs)
 
         val scroll=ScrollView(this)
@@ -169,6 +169,102 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun loadLatestHindiOnline() {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply {
+            text="Loading latest Hindi movies…"
+            setTextColor(Color.LTGRAY)
+            textSize=17f
+        })
+        online.latestHindi { list,error ->
+            runOnUiThread {
+                if(list!=null && list.isNotEmpty()) renderOnline("Latest Hindi Movies • 3 × 3",list.take(9))
+                else {
+                    Toast.makeText(this,error ?: "Could not load latest Hindi movies",Toast.LENGTH_LONG).show()
+                    loadLatestOnline()
+                }
+            }
+        }
+    }
+
+    private fun loadMusicVideos() {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply{
+            text="Latest Hindi Music Videos • 3 × 3"
+            setTextColor(Color.WHITE)
+            textSize=21f
+            setTypeface(typeface,Typeface.BOLD)
+            setPadding(0,dp(20),0,dp(8))
+        })
+        val queries=listOf(
+            "latest hindi songs official video",
+            "new bollywood songs official video",
+            "latest punjabi songs official video",
+            "new hindi romantic songs official video",
+            "latest hindi party songs official video",
+            "new bollywood movie songs official video",
+            "latest hindi sad songs official video",
+            "trending hindi music videos official",
+            "new indian music videos official"
+        )
+        val labels=listOf(
+            "Latest Hindi","New Bollywood","Latest Punjabi",
+            "Romantic","Party Hits","Movie Songs",
+            "Sad Songs","Trending","New Indian"
+        )
+        val grid=GridLayout(this).apply {
+            columnCount=3
+            rowCount=3
+            alignmentMode=GridLayout.ALIGN_BOUNDS
+            useDefaultMargins=false
+        }
+        val width=(resources.displayMetrics.widthPixels-dp(32)-dp(16))/3
+        queries.forEachIndexed { i,q ->
+            val card=LinearLayout(this).apply {
+                orientation=LinearLayout.VERTICAL
+                gravity=Gravity.CENTER
+                setPadding(dp(6),dp(8),dp(6),dp(8))
+                setBackgroundColor(Color.rgb(24,24,24))
+                layoutParams=GridLayout.LayoutParams().apply {
+                    width=width
+                    height=dp(128)
+                    setMargins(dp(2),dp(2),dp(2),dp(2))
+                }
+                setOnClickListener { openVideoSearchInApp(q) }
+            }
+            card.addView(TextView(this).apply {
+                text="♫"
+                textSize=30f
+                gravity=Gravity.CENTER
+                setTextColor(Color.rgb(229,9,20))
+            },LinearLayout.LayoutParams(-1,0,1f))
+            card.addView(TextView(this).apply {
+                text=labels[i]
+                gravity=Gravity.CENTER
+                setTextColor(Color.WHITE)
+                textSize=13f
+                setTypeface(typeface,Typeface.BOLD)
+                maxLines=2
+            },LinearLayout.LayoutParams(-1,dp(38)))
+            grid.addView(card)
+        }
+        contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
+        contentHolder.addView(TextView(this).apply {
+            text="Tap a tile to browse official music videos inside StreamBox."
+            setTextColor(Color.LTGRAY)
+            textSize=12f
+            setPadding(0,dp(8),0,dp(16))
+        })
+    }
+
+    private fun openVideoSearchInApp(query:String) {
+        val url="https://m.youtube.com/results?search_query=" + java.net.URLEncoder.encode(query,"UTF-8")
+        startActivity(Intent(this,WebVideoActivity::class.java).apply {
+            putExtra("title","Music Videos")
+            putExtra("url",url)
+        })
     }
 
     private fun loadLatestOnline() {
@@ -261,8 +357,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val suffix=if(kind=="music") " music" else ""
-        val url="https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode(q + suffix,"UTF-8")
-        startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
+        openVideoSearchInApp(q + suffix)
     }
 
     private fun renderOnline(title:String,list:List<OnlineMovie>){
@@ -286,13 +381,14 @@ class MainActivity : AppCompatActivity() {
             })
             return
         }
-        val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        val hsv=HorizontalScrollView(this).apply{
-            isHorizontalScrollBarEnabled=false
-            addView(row)
+        val grid=GridLayout(this).apply {
+            columnCount=3
+            rowCount=3
+            alignmentMode=GridLayout.ALIGN_BOUNDS
+            useDefaultMargins=false
         }
-        contentHolder.addView(hsv,LinearLayout.LayoutParams(-1,dp(305)))
-        list.forEach{row.addView(onlineCard(it))}
+        list.take(9).forEach { grid.addView(onlineCard(it)) }
+        contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
     }
 
     private fun onlineCard(m:OnlineMovie):View{
@@ -300,20 +396,24 @@ class MainActivity : AppCompatActivity() {
             orientation=LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(24,24,24))
             setPadding(dp(8),dp(8),dp(8),dp(8))
-            layoutParams=LinearLayout.LayoutParams(dp(210),dp(290)).apply{setMargins(0,0,dp(12),0)}
+            layoutParams=GridLayout.LayoutParams().apply{
+                width=(resources.displayMetrics.widthPixels-dp(48))/3
+                height=dp(250)
+                setMargins(dp(2),dp(2),dp(2),dp(6))
+            }
         }
         val poster=ImageView(this).apply{
             setBackgroundColor(Color.DKGRAY)
             scaleType=ImageView.ScaleType.CENTER_CROP
         }
-        card.addView(poster,LinearLayout.LayoutParams(-1,dp(155)))
+        card.addView(poster,LinearLayout.LayoutParams(-1,dp(135)))
         if(m.posterUrl.isNotBlank()) loadImage(m.posterUrl,poster)
         card.addView(TextView(this).apply{
             text=m.title
             setTextColor(Color.WHITE)
-            textSize=16f
+            textSize=13f
             setTypeface(typeface,Typeface.BOLD)
-            maxLines=1
+            maxLines=2
         })
         card.addView(TextView(this).apply{
             text=if(m.releaseDate.isBlank()) m.overview else "${m.releaseDate} • ${m.overview}"
@@ -321,7 +421,7 @@ class MainActivity : AppCompatActivity() {
             textSize=12f
             maxLines=3
         },LinearLayout.LayoutParams(-1,0,1f))
-        card.addView(button("▶ Play in app"){
+        card.addView(button("▶ Trailer"){
             openOnlineMovie(m)
         },LinearLayout.LayoutParams(-1,dp(42)))
         card.setOnClickListener { openOnlineMovie(m) }
@@ -346,13 +446,14 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(typeface,Typeface.BOLD)
                 setPadding(0,dp(20),0,dp(8))
             })
-            val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-            val hsv=HorizontalScrollView(this).apply{
-                isHorizontalScrollBarEnabled=false
-                addView(row)
+            val grid=GridLayout(this).apply {
+                columnCount=3
+                rowCount=3
+                alignmentMode=GridLayout.ALIGN_BOUNDS
+                useDefaultMargins=false
             }
-            contentHolder.addView(hsv,LinearLayout.LayoutParams(-1,dp(285)))
-            items.forEach{row.addView(movieCard(it))}
+            items.take(9).forEach { grid.addView(movieCard(it)) }
+            contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
         }
     }
 
@@ -361,13 +462,17 @@ class MainActivity : AppCompatActivity() {
             orientation=LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(24,24,24))
             setPadding(dp(8),dp(8),dp(8),dp(8))
-            layoutParams=LinearLayout.LayoutParams(dp(190),dp(270)).apply{setMargins(0,0,dp(12),0)}
+            layoutParams=GridLayout.LayoutParams().apply{
+                width=(resources.displayMetrics.widthPixels-dp(48))/3
+                height=dp(250)
+                setMargins(dp(2),dp(2),dp(2),dp(6))
+            }
         }
         val poster=ImageView(this).apply{
             setBackgroundColor(Color.DKGRAY)
             scaleType=ImageView.ScaleType.CENTER_CROP
         }
-        card.addView(poster,LinearLayout.LayoutParams(-1,dp(155)))
+        card.addView(poster,LinearLayout.LayoutParams(-1,dp(135)))
         loadImage(m.posterUrl,poster)
         card.addView(TextView(this).apply{
             text=m.title
