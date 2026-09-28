@@ -37,3 +37,6 @@ The key is read by `app/build.gradle.kts` and exposed to the app through `BuildC
 6. After the build finishes, download the `streambox-debug-apk` artifact.
 
 If the TMDB secret is missing, the app can still build, but online Latest/Search will report that the TMDB key is not configured.
+
+
+Build automation status: configured.
