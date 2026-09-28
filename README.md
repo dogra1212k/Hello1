@@ -1,46 +1,33 @@
 # Hello1 / StreamBox Free
 
-Android movie catalog app.
+Android movie catalog and in-app video player, version 1.6.
 
-## Online latest movies and search
+## Movies and search
 
-The app is already wired for TMDB-powered movie discovery/search. A TMDB API key is intentionally **not committed to this public repository**.
+- **Home:** three-column, recycled poster grid. Scrolling loads the next page of Hindi movies; the old nine-card and forty-title caps are removed.
+- **Latest Hindi:** automatically loads at least 120 unique available Hindi titles, newest release date first, then continues on scroll or **Load more**. Future releases are excluded. If the source has fewer titles, all available titles are shown.
+- **Pagination:** duplicate titles are removed by media type and ID. Failed pages can be retried without clearing loaded titles. Switching tabs/searches ignores obsolete responses. Each query respects TMDB's maximum of 500 pages; “continuous scrolling” does not mean an infinite source catalog.
+- **All search:** paginated movie and series results, matching saved videos, and buttons for matching music/videos.
+- **Music / Videos:** YouTube's mobile search page opens inside StreamBox. Supported YouTube app links are converted to web URLs; unsupported external app schemes are blocked. Fullscreen, Back, retry, and WebView lifecycle cleanup are shared with trailers.
+- **My Videos:** local/Firebase catalog with in-app direct-stream playback. Long press a card to download a direct file or save a favorite.
+- **Posters:** recycled views with Glide image caching and a fallback logo.
 
-Add this line to your local `gradle.properties`:
+TMDB supplies metadata and trailers, not full movie video files. Catalog cards say **Trailer**; saved direct streams say **Watch**. To publish full films, add video URLs you own or are authorized to distribute through the existing admin catalog. No explicit adult catalog is included. YouTube may restrict individual videos by region, login, age, or embedding settings; unavailable videos are not bypassed and no external app is launched.
 
-```properties
-TMDB_API_KEY=YOUR_TMDB_API_KEY
+## Configuration and APK build
+
+The TMDB key is not committed to this public repository. Set the GitHub Actions repository secret **TMDB_API_KEY**. Optionally configure **GOOGLE_SERVICES_JSON_B64** for Firebase.
+
+For local builds, pass `-PTMDB_API_KEY=YOUR_KEY` or use your private Gradle user properties. Do not commit a real key.
+
+GitHub Actions runs:
+
+```sh
+gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug -PTMDB_API_KEY="$TMDB_API_KEY" --stacktrace
 ```
 
-Then rebuild the app.
+Download **streambox-debug-apk** from the completed **Android Build** run. Unit-test and lint reports are uploaded as **streambox-check-reports**. Without a configured key, saved videos still work, while online catalog requests show a configuration message.
 
-The key is read by `app/build.gradle.kts` and exposed to the app through `BuildConfig.TMDB_API_KEY`.
+## Validation
 
-## Current features
-
-- New A-style app logo
-- Local movie catalog
-- Latest releases tab (TMDB)
-- Online movie search (TMDB)
-- Watch-options link
-- Download button for direct video URLs that you own or are licensed to distribute
-- Login / signup / admin flow
-
-
-## Build APK with GitHub Actions
-
-1. Open the repository on GitHub.
-2. Go to **Settings → Secrets and variables → Actions**.
-3. Create a repository secret named `TMDB_API_KEY` and paste your TMDB API key as its value.
-4. Open the **Actions** tab.
-5. Run **Android Build**.
-6. After the build finishes, download the `streambox-debug-apk` artifact.
-
-If the TMDB secret is missing, the app can still build, but online Latest/Search will report that the TMDB key is not configured.
-
-
-Build automation status: configured.
-
-TMDB secret recheck build trigger.
-
-Latest 3x3 media update build trigger.
+Unit tests cover 120-title pagination, deduplication, retries, stale tab/search responses, end-of-catalog handling, page limits, mixed search parsing, Hindi/date filters, and in-app deep-link conversion. Device checks: scroll beyond 120 movies, switch tabs during loading, retry after disconnecting, search Hindi text, play music/trailers, enter/exit fullscreen, and verify Back stays inside StreamBox until leaving the video screen.

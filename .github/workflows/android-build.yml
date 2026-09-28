@@ -34,8 +34,8 @@ jobs:
         run: |
           echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug -PTMDB_API_KEY="$TMDB_API_KEY" --stacktrace
+      - name: Test, lint and build debug APK
+        run: gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug -PTMDB_API_KEY="$TMDB_API_KEY" --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -43,3 +43,13 @@ jobs:
           name: streambox-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streambox-check-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore

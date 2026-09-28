@@ -2,207 +2,142 @@ package com.example.streambox
 
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URLEncoder
 import java.net.URL
-import kotlin.concurrent.thread
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
-data class OnlineMovie(
-    val id: Int,
-    val title: String,
-    val overview: String,
-    val posterUrl: String,
-    val releaseDate: String,
-    val mediaType: String = "movie"
-)
+class OnlineMovieService(
+    private val apiKey: String = BuildConfig.TMDB_API_KEY.trim(),
+    private val transport: (String) -> String = ::fetchJson
+) {
+    private val executor = Executors.newFixedThreadPool(2)
 
-class OnlineMovieService {
-    private val apiKey = BuildConfig.TMDB_API_KEY.trim()
+    fun isConfigured() = apiKey.isNotBlank()
 
-    fun isConfigured(): Boolean = apiKey.isNotBlank()
-
-    fun hindiHome(callback: (List<OnlineMovie>?, String?) -> Unit) {
-        requestMany(
-            listOf(
-                "https://api.themoviedb.org/3/discover/movie?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=popularity.desc&include_adult=false&page=1&region=IN",
-                "https://api.themoviedb.org/3/discover/movie?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=popularity.desc&include_adult=false&page=2&region=IN"
-            ),
-            "movie",
-            callback
-        )
-    }
-
-    fun latestHindi(callback: (List<OnlineMovie>?, String?) -> Unit) {
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-        requestMovies(
-            "https://api.themoviedb.org/3/discover/movie" +
-                "?api_key=${enc(apiKey)}&language=hi-IN&with_original_language=hi&sort_by=primary_release_date.desc&include_adult=false&page=1&region=IN&primary_release_date.lte=${enc(today)}",
-            "movie",
-            callback
-        )
-    }
-
-    fun latest(callback: (List<OnlineMovie>?, String?) -> Unit) {
-        requestMovies(
-            "https://api.themoviedb.org/3/movie/now_playing" +
-                "?api_key=${enc(apiKey)}&language=en-US&page=1&region=IN",
-            "movie",
-            callback
-        )
-    }
-
-    fun search(query: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
-        requestMovies(
-            "https://api.themoviedb.org/3/search/movie" +
-                "?api_key=${enc(apiKey)}&language=hi-IN&include_adult=false&page=1&query=${enc(query)}",
-            "movie",
-            callback
-        )
-    }
-
-    fun searchTv(query: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
-        requestMovies(
-            "https://api.themoviedb.org/3/search/tv" +
-                "?api_key=${enc(apiKey)}&language=hi-IN&include_adult=false&page=1&query=${enc(query)}",
-            "tv",
-            callback
-        )
-    }
-
-    fun latestTv(callback: (List<OnlineMovie>?, String?) -> Unit) {
-        requestMovies(
-            "https://api.themoviedb.org/3/tv/on_the_air" +
-                "?api_key=${enc(apiKey)}&language=hi-IN&page=1",
-            "tv",
-            callback
-        )
-    }
-
-    fun trailerKey(mediaType: String, movieId: Int, callback: (String?, String?) -> Unit) {
-        if (!isConfigured()) {
-            callback(null, "TMDB API key is not configured")
-            return
-        }
-
-        thread {
+    fun loadPage(feed: CatalogFeed, page: Int, query: String = "", callback: (OnlinePage?, String?) -> Unit): Future<*> {
+        return executor.submit {
             try {
-                val safeType = if (mediaType == "tv") "tv" else "movie"
-                val url = "https://api.themoviedb.org/3/$safeType/$movieId/videos" +
-                    "?api_key=${enc(apiKey)}&language=en-US"
-                val body = get(url)
-                val arr = JSONObject(body).optJSONArray("results")
-                var fallback: String? = null
-                var officialTrailer: String? = null
-
-                if (arr != null) {
-                    for (i in 0 until arr.length()) {
-                        val o = arr.optJSONObject(i) ?: continue
-                        if (o.optString("site") != "YouTube") continue
-                        val key = o.optString("key")
-                        if (key.isBlank()) continue
-                        if (fallback == null) fallback = key
-                        val type = o.optString("type")
-                        val official = o.optBoolean("official", false)
-                        if (type.equals("Trailer", true) && official) {
-                            officialTrailer = key
-                            break
-                        }
-                        if (officialTrailer == null && type.equals("Trailer", true)) {
-                            officialTrailer = key
-                        }
-                    }
-                }
-                callback(officialTrailer ?: fallback, null)
+                check(isConfigured()) { "Online catalog is unavailable in this build. Add the TMDB key and rebuild." }
+                val body = transport(pageUrl(feed, page, query, todayInIndia()))
+                if (!Thread.currentThread().isInterrupted) callback(parsePage(body, feed), null)
             } catch (e: Exception) {
-                callback(null, e.message ?: "Could not load trailer")
+                if (!Thread.currentThread().isInterrupted) callback(null, friendlyError(e))
             }
         }
     }
 
-    private fun requestMany(urls: List<String>, mediaType: String, callback: (List<OnlineMovie>?, String?) -> Unit) {
-        if (!isConfigured()) {
-            callback(null, "TMDB API key is not configured")
-            return
+    internal fun pageUrl(feed: CatalogFeed, page: Int, query: String, today: String): String {
+        require(page in 1..CatalogPager.MAX_PAGES) { "End of available catalog." }
+        val path = when (feed) {
+            CatalogFeed.HOME, CatalogFeed.LATEST_HINDI -> "discover/movie"
+            CatalogFeed.SERIES -> "tv/on_the_air"
+            CatalogFeed.SEARCH -> "search/multi"
         }
-        thread {
+        val params = linkedMapOf(
+            "api_key" to apiKey, "language" to "hi-IN", "include_adult" to "false", "page" to page.toString()
+        )
+        when (feed) {
+            CatalogFeed.HOME, CatalogFeed.LATEST_HINDI -> {
+                params["with_original_language"] = "hi"
+                params["include_video"] = "false"
+                params["sort_by"] = if (feed == CatalogFeed.HOME) "popularity.desc" else "primary_release_date.desc"
+                params["primary_release_date.lte"] = today
+            }
+            CatalogFeed.SEARCH -> params["query"] = query
+            CatalogFeed.SERIES -> Unit
+        }
+        return "https://api.themoviedb.org/3/$path?" + params.entries.joinToString("&") { "${it.key}=${enc(it.value)}" }
+    }
+
+    fun trailerKey(mediaType: String, movieId: Int, callback: (String?, String?) -> Unit): Future<*> {
+        return executor.submit {
             try {
-                val all = mutableListOf<OnlineMovie>()
-                urls.forEach { url ->
-                    val body = get(url)
-                    val arr = JSONObject(body).optJSONArray("results")
-                    if (arr != null) {
-                        for (i in 0 until arr.length()) {
-                            val o = arr.optJSONObject(i) ?: continue
-                            val posterPath = o.optString("poster_path")
-                            all += OnlineMovie(
-                                id = o.optInt("id"),
-                                title = o.optString("title").ifBlank {
-                                    o.optString("name").ifBlank { o.optString("original_title").ifBlank { o.optString("original_name") } }
-                                },
-                                overview = o.optString("overview"),
-                                posterUrl = if (posterPath.isBlank() || posterPath == "null") "" else "https://image.tmdb.org/t/p/w500$posterPath",
-                                releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") },
-                                mediaType = mediaType
-                            )
-                        }
-                    }
+                check(isConfigured()) { "Online trailers are unavailable in this build." }
+                val type = if (mediaType == "tv") "tv" else "movie"
+                var key: String? = null
+                for (language in listOf("hi-IN", "en-US")) {
+                    val body = transport("https://api.themoviedb.org/3/$type/$movieId/videos?api_key=${enc(apiKey)}&language=$language")
+                    key = trailerFromJson(body)
+                    if (key != null || Thread.currentThread().isInterrupted) break
                 }
-                callback(all.distinctBy { it.id }.take(40), null)
+                if (!Thread.currentThread().isInterrupted) callback(key, null)
             } catch (e: Exception) {
-                callback(null, e.message ?: "Network error")
+                if (!Thread.currentThread().isInterrupted) callback(null, friendlyError(e))
             }
         }
     }
 
-    private fun requestMovies(url: String, mediaType: String = "movie", callback: (List<OnlineMovie>?, String?) -> Unit) {
-        if (!isConfigured()) {
-            callback(null, "TMDB API key is not configured")
-            return
+    fun close() { executor.shutdownNow() }
+
+    companion object {
+        internal fun parsePage(body: String, feed: CatalogFeed): OnlinePage {
+            val root = JSONObject(body)
+            val arr = root.optJSONArray("results") ?: error("Invalid catalog response. Please retry.")
+            val items = buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    if (o.optBoolean("adult", false)) continue
+                    val type = if (feed == CatalogFeed.SEARCH) o.optString("media_type")
+                        else if (feed == CatalogFeed.SERIES) "tv" else "movie"
+                    if (type != "movie" && type != "tv") continue
+                    val id = o.optInt("id")
+                    val title = listOf("title", "name", "original_title", "original_name")
+                        .firstNotNullOfOrNull { key -> o.optString(key).takeIf { it.isNotBlank() && it != "null" } } ?: continue
+                    if (id <= 0) continue
+                    val poster = o.optString("poster_path")
+                    val dateKey = if (type == "tv") "first_air_date" else "release_date"
+                    add(OnlineMovie(id, title, o.optString("overview").takeUnless { it == "null" }.orEmpty(),
+                        if (poster.startsWith("/")) "https://image.tmdb.org/t/p/w342$poster" else "",
+                        o.optString(dateKey).takeUnless { it == "null" }.orEmpty(), type))
+                }
+            }
+            return OnlinePage(root.optInt("page", 1), root.optInt("total_pages", 0), root.optInt("total_results", 0), items)
         }
 
-        thread {
+        internal fun trailerFromJson(body: String): String? {
+            val videos = JSONObject(body).optJSONArray("results") ?: return null
+            val candidates = (0 until videos.length()).mapNotNull { videos.optJSONObject(it) }
+                .filter { it.optString("site") == "YouTube" && it.optString("key").matches(Regex("[A-Za-z0-9_-]{11}")) }
+            return candidates.sortedByDescending {
+                (if (it.optBoolean("official")) 2 else 0) + (if (it.optString("type") == "Trailer") 1 else 0)
+            }.firstOrNull()?.optString("key")
+        }
+
+        private fun todayInIndia() = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+        }.format(Date())
+
+        private fun enc(value: String) = URLEncoder.encode(value, "UTF-8")
+
+        private fun friendlyError(e: Exception) = when (e) {
+            is UnknownHostException -> "Cannot reach the movie service. Check your internet or DNS, then retry."
+            is SocketTimeoutException -> "The movie service timed out. Tap Retry."
+            else -> e.message ?: "Could not load movies. Tap Retry."
+        }
+
+        private fun fetchJson(url: String): String {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 10000
+                setRequestProperty("Accept", "application/json")
+            }
             try {
-                val body = get(url)
-                val arr = JSONObject(body).optJSONArray("results")
-                val items = mutableListOf<OnlineMovie>()
-                if (arr != null) {
-                    for (i in 0 until arr.length()) {
-                        val o = arr.optJSONObject(i) ?: continue
-                        val posterPath = o.optString("poster_path")
-                        items += OnlineMovie(
-                            id = o.optInt("id"),
-                            title = o.optString("title").ifBlank {
-                                o.optString("name").ifBlank { o.optString("original_title").ifBlank { o.optString("original_name") } }
-                            },
-                            overview = o.optString("overview"),
-                            posterUrl = if (posterPath.isBlank() || posterPath == "null") ""
-                                else "https://image.tmdb.org/t/p/w500$posterPath",
-                            releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") },
-                            mediaType = mediaType
-                        )
-                    }
+                when (val code = connection.responseCode) {
+                    in 200..299 -> return connection.inputStream.bufferedReader().use { it.readText() }
+                    401, 403 -> error("Movie service access is unavailable. Check the configured TMDB key.")
+                    429 -> error("Movie service is busy. Wait a moment, then tap Retry.")
+                    else -> error("Movie service unavailable ($code). Tap Retry.")
                 }
-                callback(items, null)
-            } catch (e: Exception) {
-                callback(null, e.message ?: "Network error")
+            } finally {
+                connection.disconnect()
             }
         }
     }
-
-    private fun get(url: String): String {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10000
-            readTimeout = 10000
-            requestMethod = "GET"
-            setRequestProperty("Accept", "application/json")
-        }
-        val code = conn.responseCode
-        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-            .bufferedReader()
-            .use { it.readText() }
-        if (code !in 200..299) error("Online movie service error ($code)")
-        return body
-    }
-
-    private fun enc(value: String): String =
-        URLEncoder.encode(value, "UTF-8")
 }

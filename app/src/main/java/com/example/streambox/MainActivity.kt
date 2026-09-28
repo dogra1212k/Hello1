@@ -2,7 +2,6 @@ package com.example.streambox
 
 import android.app.DownloadManager
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -10,546 +9,325 @@ import android.os.Bundle
 import android.os.Environment
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import java.net.URL
-import kotlin.concurrent.thread
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import java.net.URLEncoder
+import java.util.concurrent.Future
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var contentHolder: LinearLayout
-    private lateinit var searchBox: EditText
-    private val prefs by lazy { getSharedPreferences("favorites", MODE_PRIVATE) }
     private val session by lazy { SessionManager(this) }
     private val catalog by lazy { CatalogStore(this) }
     private val firebase by lazy { FirebaseGateway(this) }
-    private val online by lazy { OnlineMovieService() }
-    private var movies: List<Movie> = emptyList()
+    private val prefs by lazy { getSharedPreferences("favorites", MODE_PRIVATE) }
+    private val online = OnlineMovieService()
+    private val pager = CatalogPager()
+    private val cards = MovieGridAdapter()
+    private lateinit var searchBox: EditText
+    private lateinit var grid: RecyclerView
+    private lateinit var heading: TextView
+    private lateinit var status: TextView
+    private lateinit var more: Button
+    private lateinit var videoActions: LinearLayout
+    private var request: Future<*>? = null
+    private var feed: CatalogFeed? = null
+    private var screen = "HOME"
+    private var query = ""
+    private var screenGeneration = 0
+    private var fallbackVisible = false
+    private var localMovieCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if(!session.isLoggedIn()){
+        if (!session.isLoggedIn()) {
             startActivity(Intent(this, AuthActivity::class.java))
             finish()
             return
         }
         buildUi()
-    }
-
-    private fun refreshCatalog() {
-        movies=catalog.getMovies()
-        if (online.isConfigured()) {
-            loadHindiHome()
-            return
-        }
-        if(firebase.isAvailable() && firebase.currentEmail()!=null) {
-            firebase.loadMovies { cloud,error ->
-                if(cloud != null && cloud.isNotEmpty()) {
-                    movies=cloud
-                    catalog.saveMovies(cloud)
-                    renderMovies(filtered())
-                } else {
-                    renderMovies(filtered())
-                    if(error!=null) Toast.makeText(this,"Using offline catalog",Toast.LENGTH_SHORT).show()
-                }
-            }
-        } else {
-            renderMovies(filtered())
+        query = savedInstanceState?.getString("query").orEmpty()
+        searchBox.setText(savedInstanceState?.getString("search") ?: query)
+        when (savedInstanceState?.getString("screen")) {
+            "MUSIC" -> showMusic()
+            "LOCAL" -> showLocal()
+            else -> openFeed(runCatching { CatalogFeed.valueOf(savedInstanceState?.getString("screen") ?: "HOME") }
+                .getOrDefault(CatalogFeed.HOME), query)
         }
     }
 
     private fun buildUi() {
-        val root=LinearLayout(this).apply {
-            orientation=LinearLayout.VERTICAL
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
-            setPadding(dp(16),dp(16),dp(16),dp(12))
+            setPadding(dp(12), dp(8), dp(12), dp(6))
         }
-
-        val top=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(dp(12) + bars.left, dp(8) + bars.top, dp(12) + bars.right, dp(6) + bars.bottom)
+            insets
         }
-
-        top.addView(TextView(this).apply {
-            text="STREAMBOX"
-            setTextColor(Color.rgb(229,9,20))
-            textSize=28f
-            setTypeface(typeface,Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0,-2,1f))
-
-        top.addView(Button(this).apply {
-            text=if(session.isAdmin()) "Admin" else "Logout"
-            isAllCaps=false
-            setOnClickListener {
-                if(session.isAdmin()) {
-                    startActivity(Intent(this@MainActivity,AdminActivity::class.java))
-                } else {
-                    firebase.signOut()
-                    session.logout()
-                    startActivity(Intent(this@MainActivity,AuthActivity::class.java))
-                    finishAffinity()
-                }
+        val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        top.addView(label("STREAMBOX", 25f).apply {
+            setTextColor(Color.rgb(229, 9, 20)); setTypeface(typeface, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(button(if (session.isAdmin()) "Admin" else "Logout") {
+            if (session.isAdmin()) startActivity(Intent(this, AdminActivity::class.java))
+            else {
+                firebase.signOut(); session.logout()
+                startActivity(Intent(this, AuthActivity::class.java)); finish()
             }
-        })
-
+        }, LinearLayout.LayoutParams(-2, dp(44)))
         root.addView(top)
-        root.addView(TextView(this).apply {
-            text="${session.email()} • ${if(firebase.isAvailable()) "Cloud" else "Local"} mode"
-            setTextColor(Color.LTGRAY)
-            textSize=13f
-            setPadding(0,0,0,dp(12))
-        })
-
-        searchBox=EditText(this).apply {
-            hint="Search movies, series, music & videos"
-            setHintTextColor(Color.GRAY)
-            setTextColor(Color.WHITE)
+        searchBox = EditText(this).apply {
+            hint = "Search movies, series, music & videos"
+            setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
             setSingleLine(true)
-            setBackgroundColor(Color.rgb(35,35,35))
-            setPadding(dp(12),0,dp(12),0)
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            setBackgroundColor(Color.rgb(35, 35, 35))
+            setPadding(dp(10), 0, dp(10), 0)
+            setOnEditorActionListener { _, _, _ -> runSearch(); true }
         }
-        root.addView(searchBox,LinearLayout.LayoutParams(-1,dp(48)))
-
-        val searchTypes=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            setPadding(0,dp(6),0,0)
-        }
-        searchTypes.addView(button("All"){ runSearchFromBox() },LinearLayout.LayoutParams(0,dp(40),1f))
-        searchTypes.addView(button("Music"){ openYouTubeSearch("music") },LinearLayout.LayoutParams(0,dp(40),1f))
-        searchTypes.addView(button("Videos"){ openYouTubeSearch("video") },LinearLayout.LayoutParams(0,dp(40),1f))
+        root.addView(searchBox, LinearLayout.LayoutParams(-1, dp(48)))
+        val searchTypes = LinearLayout(this)
+        searchTypes.addView(button("All") { runSearch() }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        searchTypes.addView(button("Music") { videoSearch(true) }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        searchTypes.addView(button("Videos") { videoSearch(false) }, LinearLayout.LayoutParams(0, dp(44), 1f))
         root.addView(searchTypes)
-
-        val tabs=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            setPadding(0,dp(8),0,dp(8))
+        val tabs = LinearLayout(this)
+        listOf("Home" to { openFeed(CatalogFeed.HOME) }, "Latest Hindi" to { openFeed(CatalogFeed.LATEST_HINDI) },
+            "Music" to { showMusic() }, "Series" to { openFeed(CatalogFeed.SERIES) }, "My Videos" to { showLocal() })
+            .forEach { (name, action) -> tabs.addView(button(name, action), LinearLayout.LayoutParams(-2, dp(44))) }
+        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
+        heading = label("", 20f).apply { setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(8), 0, dp(4)) }
+        root.addView(heading)
+        videoActions = LinearLayout(this).apply {
+            addView(button("♫ Matching music") { openVideoSearch("$query music official video", "Music") }, LinearLayout.LayoutParams(0, dp(40), 1f))
+            addView(button("▶ Matching videos") { openVideoSearch(query, "Videos") }, LinearLayout.LayoutParams(0, dp(40), 1f))
+            visibility = View.GONE
         }
-        tabs.addView(button("Home"){loadHindiHome()},LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("Latest"){loadLatestHindiOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("Music"){loadMusicVideos()},LinearLayout.LayoutParams(0,dp(44),1f))
-        tabs.addView(button("Series"){loadLatestSeries()},LinearLayout.LayoutParams(0,dp(44),1f))
-        root.addView(tabs)
-
-        val scroll=ScrollView(this)
-        contentHolder=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        scroll.addView(contentHolder)
-        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-
-        searchBox.setOnEditorActionListener { _,_,_->
-            runSearchFromBox()
-            true
+        root.addView(videoActions)
+        grid = RecyclerView(this).apply {
+            layoutManager = GridLayoutManager(this@MainActivity, 3)
+            adapter = cards
+            itemAnimator = null
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    if (dy > 0 && nearEnd() && pager.error == null) loadMore()
+                }
+            })
         }
+        root.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
+        status = label("", 12f).apply { setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, dp(4)) }
+        root.addView(status)
+        more = button("Load more") { loadMore() }
+        root.addView(more, LinearLayout.LayoutParams(-1, dp(44)))
         setContentView(root)
-        refreshCatalog()
     }
 
-    private fun filtered():List<Movie>{
-        val q=searchBox.text.toString().trim().lowercase()
-        return if(q.isEmpty()) movies else movies.filter{
-            it.title.lowercase().contains(q)||it.category.lowercase().contains(q)
+    private fun resetScreen(name: String) {
+        screenGeneration++
+        screen = name
+        request?.cancel(true)
+        pager.reset()
+        feed = null
+        fallbackVisible = false
+        localMovieCount = 0
+        cards.replace(emptyList())
+        grid.scrollToPosition(0)
+        videoActions.visibility = View.GONE
+        more.visibility = View.GONE
+        status.text = ""
+    }
+
+    private fun openFeed(selected: CatalogFeed, search: String = "") {
+        resetScreen(selected.name)
+        feed = selected
+        query = search
+        heading.text = selected.title
+        if (selected == CatalogFeed.SEARCH) {
+            videoActions.visibility = View.VISIBLE
+            val local = catalog.getMovies().filter { it.title.contains(query, true) || it.category.contains(query, true) }
+            localMovieCount = local.size
+            cards.append(local.map(::localTile))
         }
+        loadMore()
     }
 
-    private fun loadHindiHome() {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply {
-            text="Loading Hindi movies…"
-            setTextColor(Color.LTGRAY)
-            textSize=17f
-        })
-        online.hindiHome { list,error ->
+    private fun loadMore() {
+        val currentFeed = feed ?: return
+        val ticket = pager.beginLoad() ?: return
+        val generation = screenGeneration
+        renderStatus()
+        request = online.loadPage(currentFeed, ticket.page, query) { page, error ->
             runOnUiThread {
-                if(list!=null && list.isNotEmpty()) renderOnline("Hindi Movies • 3 × 3",list.take(9))
-                else {
-                    renderMovies(filtered())
-                    Toast.makeText(this,error ?: "Could not load Hindi movies",Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun loadLatestHindiOnline() {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply {
-            text="Loading latest Hindi movies…"
-            setTextColor(Color.LTGRAY)
-            textSize=17f
-        })
-        online.latestHindi { list,error ->
-            runOnUiThread {
-                if(list!=null && list.isNotEmpty()) renderOnline("Latest Hindi Movies • 3 × 3",list.take(9))
-                else {
-                    Toast.makeText(this,error ?: "Could not load latest Hindi movies",Toast.LENGTH_LONG).show()
-                    loadLatestOnline()
-                }
-            }
-        }
-    }
-
-    private fun loadMusicVideos() {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply{
-            text="Latest Hindi Music Videos • 3 × 3"
-            setTextColor(Color.WHITE)
-            textSize=21f
-            setTypeface(typeface,Typeface.BOLD)
-            setPadding(0,dp(20),0,dp(8))
-        })
-        val queries=listOf(
-            "latest hindi songs official video",
-            "new bollywood songs official video",
-            "latest punjabi songs official video",
-            "new hindi romantic songs official video",
-            "latest hindi party songs official video",
-            "new bollywood movie songs official video",
-            "latest hindi sad songs official video",
-            "trending hindi music videos official",
-            "new indian music videos official"
-        )
-        val labels=listOf(
-            "Latest Hindi","New Bollywood","Latest Punjabi",
-            "Romantic","Party Hits","Movie Songs",
-            "Sad Songs","Trending","New Indian"
-        )
-        val grid=GridLayout(this).apply {
-            columnCount=3
-            rowCount=3
-            alignmentMode=GridLayout.ALIGN_BOUNDS
-            useDefaultMargins=false
-        }
-        val tileWidth=(resources.displayMetrics.widthPixels-dp(32)-dp(16))/3
-        queries.forEachIndexed { i,q ->
-            val card=LinearLayout(this).apply {
-                orientation=LinearLayout.VERTICAL
-                gravity=Gravity.CENTER
-                setPadding(dp(6),dp(8),dp(6),dp(8))
-                setBackgroundColor(Color.rgb(24,24,24))
-                layoutParams=GridLayout.LayoutParams().apply {
-                    this.width=tileWidth
-                    height=dp(128)
-                    setMargins(dp(2),dp(2),dp(2),dp(2))
-                }
-                setOnClickListener { openVideoSearchInApp(q) }
-            }
-            card.addView(TextView(this).apply {
-                text="♫"
-                textSize=30f
-                gravity=Gravity.CENTER
-                setTextColor(Color.rgb(229,9,20))
-            },LinearLayout.LayoutParams(-1,0,1f))
-            card.addView(TextView(this).apply {
-                text=labels[i]
-                gravity=Gravity.CENTER
-                setTextColor(Color.WHITE)
-                textSize=13f
-                setTypeface(typeface,Typeface.BOLD)
-                maxLines=2
-            },LinearLayout.LayoutParams(-1,dp(38)))
-            grid.addView(card)
-        }
-        contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
-        contentHolder.addView(TextView(this).apply {
-            text="Tap a tile to browse official music videos inside StreamBox."
-            setTextColor(Color.LTGRAY)
-            textSize=12f
-            setPadding(0,dp(8),0,dp(16))
-        })
-    }
-
-    private fun openVideoSearchInApp(query:String) {
-        val url="https://m.youtube.com/results?search_query=" + java.net.URLEncoder.encode(query,"UTF-8")
-        startActivity(Intent(this,WebVideoActivity::class.java).apply {
-            putExtra("title","Music Videos")
-            putExtra("url",url)
-        })
-    }
-
-    private fun loadLatestOnline() {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply {
-            text="Loading latest releases…"
-            setTextColor(Color.LTGRAY)
-            textSize=17f
-        })
-        online.latest { list,error ->
-            runOnUiThread {
-                if(list!=null) renderOnline("Latest releases • 3 × 3",list.take(9))
-                else {
-                    renderMovies(filtered())
-                    Toast.makeText(this,error ?: "Could not load latest movies",Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun loadLatestSeries() {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply {
-            text="Loading web series…"
-            setTextColor(Color.LTGRAY)
-            textSize=17f
-        })
-        online.latestTv { list,error ->
-            runOnUiThread {
-                if(list!=null) renderOnline("Web series • 3 × 3",list.take(9))
-                else {
-                    renderMovies(filtered())
-                    Toast.makeText(this,error ?: "Could not load web series",Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun runSearchFromBox() {
-        val q=searchBox.text.toString().trim()
-        if(q.isNotEmpty()) searchOnline(q) else loadHindiHome()
-    }
-
-    private fun searchOnline(query:String) {
-        contentHolder.removeAllViews()
-        contentHolder.addView(TextView(this).apply {
-            text="Searching movies, series and online video…"
-            setTextColor(Color.LTGRAY)
-            textSize=17f
-        })
-        online.search(query) { movieList,movieError ->
-            online.searchTv(query) { tvList,tvError ->
-                runOnUiThread {
-                    contentHolder.removeAllViews()
-                    appendOnlineSection("Movies", movieList ?: emptyList())
-                    appendOnlineSection("Series & Shows", tvList ?: emptyList())
-                    addYouTubeSearchSection(query)
-                    if(movieList==null && tvList==null) {
-                        Toast.makeText(this,movieError ?: tvError ?: "Online search unavailable",Toast.LENGTH_LONG).show()
+                if (isDestroyed || isFinishing || generation != screenGeneration) return@runOnUiThread
+                val previousSize = pager.items.size
+                if (page == null) {
+                    if (!pager.fail(ticket, error ?: "Could not load movies. Tap Retry.")) return@runOnUiThread
+                    if (currentFeed == CatalogFeed.HOME && previousSize == 0 && !fallbackVisible) {
+                        fallbackVisible = true
+                        cards.replace(catalog.getMovies().map(::localTile))
                     }
+                    renderStatus()
+                    return@runOnUiThread
+                }
+                if (!pager.accept(ticket, page)) return@runOnUiThread
+                if (fallbackVisible) {
+                    cards.replace(emptyList())
+                    fallbackVisible = false
+                }
+                cards.append(pager.items.drop(previousSize).map(::onlineTile))
+                renderStatus()
+                // Latest fills 120 unique titles; scroll loading continues beyond the initial batch.
+                grid.post {
+                    if (generation == screenGeneration && !isDestroyed && pager.error == null && pager.hasMore &&
+                        ((currentFeed == CatalogFeed.LATEST_HINDI && pager.items.size < CatalogPager.LATEST_TARGET) ||
+                            !grid.canScrollVertically(1))) loadMore()
                 }
             }
         }
     }
 
-    private fun addYouTubeSearchSection(query:String) {
-        contentHolder.addView(TextView(this).apply{
-            text="Music & Videos"
-            setTextColor(Color.WHITE)
-            textSize=21f
-            setTypeface(typeface,Typeface.BOLD)
-            setPadding(0,dp(20),0,dp(8))
-        })
-        val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
-        row.addView(button("♫ Music"){ openYouTubeSearch("music") },LinearLayout.LayoutParams(0,dp(48),1f))
-        row.addView(button("▶ Videos"){ openYouTubeSearch("video") },LinearLayout.LayoutParams(0,dp(48),1f))
-        contentHolder.addView(row,LinearLayout.LayoutParams(-1,-2))
-        contentHolder.addView(TextView(this).apply {
-            text="YouTube online search for: $query"
-            setTextColor(Color.LTGRAY)
-            textSize=12f
-            setPadding(0,dp(6),0,dp(12))
-        })
-    }
-
-    private fun openYouTubeSearch(kind:String) {
-        val q=searchBox.text.toString().trim()
-        if(q.isEmpty()) {
-            Toast.makeText(this,"Type something in Search first",Toast.LENGTH_SHORT).show()
-            return
+    private fun renderStatus() {
+        val currentFeed = feed ?: return
+        val count = pager.items.size
+        heading.text = "${currentFeed.title}${if (count > 0) " · $count" else ""}"
+        status.text = when {
+            pager.error != null -> (if (fallbackVisible) "Showing saved videos. " else "") + pager.error
+            pager.loading && count == 0 -> "Loading…"
+            pager.loading -> "$count titles loaded • Loading more…"
+            !pager.hasMore -> if (count + localMovieCount == 0) "No titles found. Try another search." else "All available titles loaded."
+            else -> "$count titles loaded • Scroll for more"
         }
-        val suffix=if(kind=="music") " music" else ""
-        openVideoSearchInApp(q + suffix)
+        more.visibility = if (pager.hasMore || pager.error != null) View.VISIBLE else View.GONE
+        more.isEnabled = !pager.loading
+        more.text = when { pager.loading -> "Loading…"; pager.error != null -> "Retry"; else -> "Load more" }
     }
 
-    private fun renderOnline(title:String,list:List<OnlineMovie>){
-        contentHolder.removeAllViews()
-        appendOnlineSection(title,list)
+    private fun nearEnd(): Boolean {
+        val layout = grid.layoutManager as GridLayoutManager
+        return layout.findLastVisibleItemPosition() >= cards.itemCount - 9
     }
 
-    private fun appendOnlineSection(title:String,list:List<OnlineMovie>){
-        contentHolder.addView(TextView(this).apply{
-            text=title
-            setTextColor(Color.WHITE)
-            textSize=21f
-            setTypeface(typeface,Typeface.BOLD)
-            setPadding(0,dp(20),0,dp(8))
+    private fun runSearch() {
+        val text = searchBox.text.toString().trim()
+        if (text.isBlank()) openFeed(CatalogFeed.HOME) else openFeed(CatalogFeed.SEARCH, text)
+    }
+
+    private fun videoSearch(music: Boolean) {
+        val text = searchBox.text.toString().trim()
+        openVideoSearch(if (text.isBlank()) {
+            if (music) "latest hindi songs official video" else "latest hindi official videos"
+        } else text + if (music) " music official video" else "", if (music) "Music" else "Videos")
+    }
+
+    private fun openVideoSearch(text: String, title: String) {
+        startActivity(Intent(this, WebVideoActivity::class.java).apply {
+            putExtra("title", title)
+            putExtra("url", "https://m.youtube.com/results?search_query=" + URLEncoder.encode(text, "UTF-8"))
         })
-        if(list.isEmpty()){
-            contentHolder.addView(TextView(this).apply{
-                text="No online titles found."
-                setTextColor(Color.LTGRAY)
-                textSize=17f
-            })
-            return
-        }
-        val grid=GridLayout(this).apply {
-            columnCount=3
-            rowCount=3
-            alignmentMode=GridLayout.ALIGN_BOUNDS
-            useDefaultMargins=false
-        }
-        list.take(9).forEach { grid.addView(onlineCard(it)) }
-        contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
     }
 
-    private fun onlineCard(m:OnlineMovie):View{
-        val card=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(24,24,24))
-            setPadding(dp(8),dp(8),dp(8),dp(8))
-            layoutParams=GridLayout.LayoutParams().apply{
-                width=(resources.displayMetrics.widthPixels-dp(48))/3
-                height=dp(250)
-                setMargins(dp(2),dp(2),dp(2),dp(6))
+    private fun showMusic() {
+        resetScreen("MUSIC")
+        heading.text = "Music Videos"
+        val topics = listOf("Latest Hindi", "New Bollywood", "Latest Punjabi", "Romantic", "Party Hits", "Movie Songs", "Sad Songs", "Trending", "New Indian")
+        cards.replace(topics.map { title -> MovieGridAdapter.Tile(title, "Official music videos", action = "♫ Browse",
+            onClick = { openVideoSearch("$title songs official video", title) }) })
+        status.text = "Browse and watch inside StreamBox."
+    }
+
+    private fun showLocal() {
+        resetScreen("LOCAL")
+        heading.text = "My Videos"
+        showSavedMovies(catalog.getMovies())
+        val generation = screenGeneration
+        if (firebase.isAvailable() && firebase.currentEmail() != null) firebase.loadMovies { movies, _ ->
+            runOnUiThread {
+                if (isDestroyed || isFinishing || generation != screenGeneration) return@runOnUiThread
+                if (movies != null && movies.isNotEmpty()) {
+                    catalog.saveMovies(movies)
+                    showSavedMovies(movies)
+                }
             }
         }
-        val poster=ImageView(this).apply{
-            setBackgroundColor(Color.DKGRAY)
-            scaleType=ImageView.ScaleType.CENTER_CROP
-        }
-        card.addView(poster,LinearLayout.LayoutParams(-1,dp(135)))
-        if(m.posterUrl.isNotBlank()) loadImage(m.posterUrl,poster)
-        card.addView(TextView(this).apply{
-            text=m.title
-            setTextColor(Color.WHITE)
-            textSize=13f
-            setTypeface(typeface,Typeface.BOLD)
-            maxLines=2
-        })
-        card.addView(TextView(this).apply{
-            text=if(m.releaseDate.isBlank()) m.overview else "${m.releaseDate} • ${m.overview}"
-            setTextColor(Color.LTGRAY)
-            textSize=12f
-            maxLines=3
-        },LinearLayout.LayoutParams(-1,0,1f))
-        card.addView(button("▶ Trailer"){
-            openOnlineMovie(m)
-        },LinearLayout.LayoutParams(-1,dp(42)))
-        card.setOnClickListener { openOnlineMovie(m) }
-        return card
     }
 
-    private fun renderMovies(list:List<Movie>){
-        contentHolder.removeAllViews()
-        if(list.isEmpty()){
-            contentHolder.addView(TextView(this).apply{
-                text="No titles found."
-                setTextColor(Color.LTGRAY)
-                textSize=17f
+    private fun showSavedMovies(movies: List<Movie>) {
+        cards.replace(movies.map(::localTile))
+        status.text = "${movies.size} videos • Long press for download and favorites"
+    }
+
+    private fun onlineTile(movie: OnlineMovie) = MovieGridAdapter.Tile(movie.title,
+        listOf(movie.releaseDate, if (movie.mediaType == "tv") "Series" else "Movie").filter { it.isNotBlank() }.joinToString(" · "),
+        movie.posterUrl, "▶ Trailer", onClick = {
+            startActivity(Intent(this, TrailerActivity::class.java).apply {
+                putExtra("movieId", movie.id); putExtra("mediaType", movie.mediaType); putExtra("title", movie.title)
             })
+        })
+
+    private fun localTile(movie: Movie) = MovieGridAdapter.Tile(movie.title, movie.category, movie.posterUrl,
+        "▶ Watch", onClick = { play(movie) }, onLongClick = { movieOptions(movie) })
+
+    private fun play(movie: Movie) {
+        val web = VideoNavigation.isYouTubeWebUrl(movie.videoUrl)
+        startActivity(Intent(this, if (web) WebVideoActivity::class.java else PlayerActivity::class.java).apply {
+            putExtra("title", movie.title); putExtra("url", movie.videoUrl)
+        })
+    }
+
+    private fun movieOptions(movie: Movie) {
+        val favorite = prefs.getBoolean(movie.title, false)
+        android.app.AlertDialog.Builder(this).setTitle(movie.title)
+            .setItems(arrayOf("Watch", "Download", if (favorite) "Remove favorite" else "Add favorite")) { _, which ->
+                when (which) {
+                    0 -> play(movie)
+                    1 -> download(movie)
+                    2 -> { prefs.edit().putBoolean(movie.title, !favorite).apply()
+                        Toast.makeText(this, if (favorite) "Favorite removed" else "Favorite saved", Toast.LENGTH_SHORT).show() }
+                }
+            }.show()
+    }
+
+    private fun download(movie: Movie) {
+        if (VideoNavigation.isYouTubeWebUrl(movie.videoUrl)) {
+            Toast.makeText(this, "Download is available for direct video files only.", Toast.LENGTH_LONG).show()
             return
         }
-        list.groupBy{it.category}.forEach{(cat,items)->
-            contentHolder.addView(TextView(this).apply{
-                text=cat
-                setTextColor(Color.WHITE)
-                textSize=21f
-                setTypeface(typeface,Typeface.BOLD)
-                setPadding(0,dp(20),0,dp(8))
-            })
-            val grid=GridLayout(this).apply {
-                columnCount=3
-                rowCount=3
-                alignmentMode=GridLayout.ALIGN_BOUNDS
-                useDefaultMargins=false
-            }
-            items.take(9).forEach { grid.addView(movieCard(it)) }
-            contentHolder.addView(grid,LinearLayout.LayoutParams(-1,-2))
-        }
-    }
-
-    private fun movieCard(m:Movie):View{
-        val card=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(24,24,24))
-            setPadding(dp(8),dp(8),dp(8),dp(8))
-            layoutParams=GridLayout.LayoutParams().apply{
-                width=(resources.displayMetrics.widthPixels-dp(48))/3
-                height=dp(250)
-                setMargins(dp(2),dp(2),dp(2),dp(6))
-            }
-        }
-        val poster=ImageView(this).apply{
-            setBackgroundColor(Color.DKGRAY)
-            scaleType=ImageView.ScaleType.CENTER_CROP
-        }
-        card.addView(poster,LinearLayout.LayoutParams(-1,dp(135)))
-        loadImage(m.posterUrl,poster)
-        card.addView(TextView(this).apply{
-            text=m.title
-            setTextColor(Color.WHITE)
-            textSize=16f
-            setTypeface(typeface,Typeface.BOLD)
-        })
-        card.addView(TextView(this).apply{
-            text=m.description
-            setTextColor(Color.LTGRAY)
-            textSize=12f
-            maxLines=2
-        },LinearLayout.LayoutParams(-1,0,1f))
-        val a=LinearLayout(this)
-        a.addView(button("▶ Watch"){play(m)},LinearLayout.LayoutParams(0,dp(42),1f))
-        a.addView(button("↓"){download(m)},LinearLayout.LayoutParams(dp(52),dp(42)))
-        a.addView(button(if(isFavorite(m))"★" else "☆"){
-            toggleFavorite(m)
-            renderMovies(filtered())
-        },LinearLayout.LayoutParams(dp(52),dp(42)))
-        card.addView(a)
-        card.setOnClickListener{play(m)}
-        return card
-    }
-
-    private fun button(t:String,c:()->Unit)=Button(this).apply{
-        text=t
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.rgb(50,50,50))
-        isAllCaps=false
-        setOnClickListener{c()}
-    }
-
-    private fun play(m:Movie){
-        startActivity(Intent(this,PlayerActivity::class.java).apply{
-            putExtra("title",m.title)
-            putExtra("url",m.videoUrl)
-        })
-    }
-
-    private fun openOnlineMovie(m:OnlineMovie){
-        startActivity(Intent(this,TrailerActivity::class.java).apply{
-            putExtra("movieId",m.id)
-            putExtra("mediaType",m.mediaType)
-            putExtra("title",m.title)
-        })
-    }
-
-    private fun download(m:Movie){
         try {
-            val safeName=m.title.replace(Regex("[^A-Za-z0-9._-]"),"_") + ".mp4"
-            val request=DownloadManager.Request(Uri.parse(m.videoUrl))
-                .setTitle(m.title)
-                .setDescription("Downloading for offline viewing")
+            val name = movie.title.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".mp4"
+            val download = DownloadManager.Request(Uri.parse(movie.videoUrl)).setTitle(movie.title)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_MOVIES,safeName)
-            val dm=getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(request)
-            Toast.makeText(this,"Download started",Toast.LENGTH_SHORT).show()
-        } catch (_:Exception) {
-            Toast.makeText(this,"Download could not start",Toast.LENGTH_LONG).show()
-        }
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_MOVIES, name)
+            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(download)
+            Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) { Toast.makeText(this, "Download unavailable for this video", Toast.LENGTH_LONG).show() }
     }
 
-    private fun toggleFavorite(m:Movie){prefs.edit().putBoolean(m.title,!isFavorite(m)).apply()}
-    private fun isFavorite(m:Movie)=prefs.getBoolean(m.title,false)
-
-    private fun loadImage(url:String,target:ImageView){
-        if(url.isBlank()) return
-        thread{
-            try{
-                val connection=URL(url).openConnection().apply{
-                    connectTimeout=8000
-                    readTimeout=8000
-                }
-                val b=connection.getInputStream().use{BitmapFactory.decodeStream(it)}
-                if(!isFinishing && !isDestroyed) runOnUiThread{
-                    if(b!=null) target.setImageBitmap(b)
-                }
-            }catch(_:Exception){}
-        }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("screen", screen)
+        outState.putString("query", query)
+        if (::searchBox.isInitialized) outState.putString("search", searchBox.text.toString())
+        super.onSaveInstanceState(outState)
     }
 
-    private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+    override fun onDestroy() {
+        screenGeneration++
+        request?.cancel(true)
+        online.close()
+        if (::grid.isInitialized) grid.adapter = null
+        super.onDestroy()
+    }
+
+    private fun label(value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(Color.WHITE) }
+    private fun button(value: String, action: () -> Unit) = Button(this).apply {
+        text = value; isAllCaps = false; setTextColor(Color.WHITE)
+        setBackgroundColor(Color.rgb(45, 45, 45)); setOnClickListener { action() }
+        textSize = 13f
+    }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
