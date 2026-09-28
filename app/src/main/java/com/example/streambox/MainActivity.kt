@@ -117,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         }
         tabs.addView(button("Home"){renderMovies(filtered())},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("Latest"){loadLatestOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Series"){loadLatestSeries()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("My List"){renderMovies(movies.filter{isFavorite(it)})},LinearLayout.LayoutParams(0,dp(44),1f))
         root.addView(tabs)
 
@@ -154,6 +155,24 @@ class MainActivity : AppCompatActivity() {
                 else {
                     renderMovies(filtered())
                     Toast.makeText(this,error ?: "Could not load latest movies",Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun loadLatestSeries() {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply {
+            text="Loading web series…"
+            setTextColor(Color.LTGRAY)
+            textSize=17f
+        })
+        online.latestTv { list,error ->
+            runOnUiThread {
+                if(list!=null) renderOnline("Web series",list)
+                else {
+                    renderMovies(filtered())
+                    Toast.makeText(this,error ?: "Could not load web series",Toast.LENGTH_LONG).show()
                 }
             }
         }
