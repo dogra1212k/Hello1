@@ -35,6 +35,14 @@ class OnlineMovieService {
         )
     }
 
+    fun latestTv(callback: (List<OnlineMovie>?, String?) -> Unit) {
+        requestMovies(
+            "https://api.themoviedb.org/3/tv/on_the_air" +
+                "?api_key=${enc(apiKey)}&language=en-US&page=1",
+            callback
+        )
+    }
+
     fun trailerKey(movieId: Int, callback: (String?, String?) -> Unit) {
         if (!isConfigured()) {
             callback(null, "TMDB API key is not configured")
@@ -92,11 +100,13 @@ class OnlineMovieService {
                         val posterPath = o.optString("poster_path")
                         items += OnlineMovie(
                             id = o.optInt("id"),
-                            title = o.optString("title").ifBlank { o.optString("original_title") },
+                            title = o.optString("title").ifBlank {
+                                o.optString("name").ifBlank { o.optString("original_title").ifBlank { o.optString("original_name") } }
+                            },
                             overview = o.optString("overview"),
                             posterUrl = if (posterPath.isBlank() || posterPath == "null") ""
                                 else "https://image.tmdb.org/t/p/w500$posterPath",
-                            releaseDate = o.optString("release_date")
+                            releaseDate = o.optString("release_date").ifBlank { o.optString("first_air_date") }
                         )
                     }
                 }
