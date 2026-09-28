@@ -35,11 +35,6 @@ class MainActivity : AppCompatActivity() {
         buildUi()
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (::contentHolder.isInitialized) refreshCatalog()
-    }
-
     private fun refreshCatalog() {
         movies=catalog.getMovies()
         if (online.isConfigured()) {
@@ -276,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         })
         online.latest { list,error ->
             runOnUiThread {
-                if(list!=null) renderOnline("Latest releases",list)
+                if(list!=null) renderOnline("Latest releases • 3 × 3",list.take(9))
                 else {
                     renderMovies(filtered())
                     Toast.makeText(this,error ?: "Could not load latest movies",Toast.LENGTH_LONG).show()
@@ -294,7 +289,7 @@ class MainActivity : AppCompatActivity() {
         })
         online.latestTv { list,error ->
             runOnUiThread {
-                if(list!=null) renderOnline("Web series",list)
+                if(list!=null) renderOnline("Web series • 3 × 3",list.take(9))
                 else {
                     renderMovies(filtered())
                     Toast.makeText(this,error ?: "Could not load web series",Toast.LENGTH_LONG).show()
@@ -541,10 +536,17 @@ class MainActivity : AppCompatActivity() {
     private fun isFavorite(m:Movie)=prefs.getBoolean(m.title,false)
 
     private fun loadImage(url:String,target:ImageView){
+        if(url.isBlank()) return
         thread{
             try{
-                val b=URL(url).openStream().use{BitmapFactory.decodeStream(it)}
-                runOnUiThread{target.setImageBitmap(b)}
+                val connection=URL(url).openConnection().apply{
+                    connectTimeout=8000
+                    readTimeout=8000
+                }
+                val b=connection.getInputStream().use{BitmapFactory.decodeStream(it)}
+                if(!isFinishing && !isDestroyed) runOnUiThread{
+                    if(b!=null) target.setImageBitmap(b)
+                }
             }catch(_:Exception){}
         }
     }
