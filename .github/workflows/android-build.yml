@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
 
     steps:
       - name: Checkout
@@ -34,7 +35,7 @@ jobs:
           echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug -PTMDB_API_KEY="$TMDB_API_KEY" --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
