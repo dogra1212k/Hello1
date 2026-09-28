@@ -1,10 +1,13 @@
 package com.example.streambox
 
+import android.app.DownloadManager
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -19,6 +22,7 @@ class MainActivity : AppCompatActivity() {
     private val session by lazy { SessionManager(this) }
     private val catalog by lazy { CatalogStore(this) }
     private val firebase by lazy { FirebaseGateway(this) }
+    private val online by lazy { OnlineMovieService() }
     private var movies: List<Movie> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,7 +102,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         searchBox=EditText(this).apply {
-            hint="Search movies or categories"
+            hint="Search movies online"
             setHintTextColor(Color.GRAY)
             setTextColor(Color.WHITE)
             setSingleLine(true)
@@ -112,6 +116,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0,dp(8),0,dp(8))
         }
         tabs.addView(button("Home"){renderMovies(filtered())},LinearLayout.LayoutParams(0,dp(44),1f))
+        tabs.addView(button("Latest"){loadLatestOnline()},LinearLayout.LayoutParams(0,dp(44),1f))
         tabs.addView(button("My List"){renderMovies(movies.filter{isFavorite(it)})},LinearLayout.LayoutParams(0,dp(44),1f))
         root.addView(tabs)
 
@@ -120,7 +125,11 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(contentHolder)
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
 
-        searchBox.setOnEditorActionListener { _,_,_-> renderMovies(filtered()); false }
+        searchBox.setOnEditorActionListener { _,_,_->
+            val q=searchBox.text.toString().trim()
+            if(q.isNotEmpty()) searchOnline(q) else renderMovies(filtered())
+            true
+        }
         setContentView(root)
         refreshCatalog()
     }
@@ -130,6 +139,100 @@ class MainActivity : AppCompatActivity() {
         return if(q.isEmpty()) movies else movies.filter{
             it.title.lowercase().contains(q)||it.category.lowercase().contains(q)
         }
+    }
+
+    private fun loadLatestOnline() {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply {
+            text="Loading latest releases…"
+            setTextColor(Color.LTGRAY)
+            textSize=17f
+        })
+        online.latest { list,error ->
+            runOnUiThread {
+                if(list!=null) renderOnline("Latest releases",list)
+                else {
+                    renderMovies(filtered())
+                    Toast.makeText(this,error ?: "Could not load latest movies",Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun searchOnline(query:String) {
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply {
+            text="Searching online…"
+            setTextColor(Color.LTGRAY)
+            textSize=17f
+        })
+        online.search(query) { list,error ->
+            runOnUiThread {
+                if(list!=null) renderOnline("Search: $query",list)
+                else {
+                    renderMovies(filtered())
+                    Toast.makeText(this,error ?: "Online search unavailable",Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun renderOnline(title:String,list:List<OnlineMovie>){
+        contentHolder.removeAllViews()
+        contentHolder.addView(TextView(this).apply{
+            text=title
+            setTextColor(Color.WHITE)
+            textSize=21f
+            setTypeface(typeface,Typeface.BOLD)
+            setPadding(0,dp(20),0,dp(8))
+        })
+        if(list.isEmpty()){
+            contentHolder.addView(TextView(this).apply{
+                text="No online titles found."
+                setTextColor(Color.LTGRAY)
+                textSize=17f
+            })
+            return
+        }
+        val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
+        val hsv=HorizontalScrollView(this).apply{
+            isHorizontalScrollBarEnabled=false
+            addView(row)
+        }
+        contentHolder.addView(hsv,LinearLayout.LayoutParams(-1,dp(305)))
+        list.forEach{row.addView(onlineCard(it))}
+    }
+
+    private fun onlineCard(m:OnlineMovie):View{
+        val card=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(24,24,24))
+            setPadding(dp(8),dp(8),dp(8),dp(8))
+            layoutParams=LinearLayout.LayoutParams(dp(210),dp(290)).apply{setMargins(0,0,dp(12),0)}
+        }
+        val poster=ImageView(this).apply{
+            setBackgroundColor(Color.DKGRAY)
+            scaleType=ImageView.ScaleType.CENTER_CROP
+        }
+        card.addView(poster,LinearLayout.LayoutParams(-1,dp(155)))
+        if(m.posterUrl.isNotBlank()) loadImage(m.posterUrl,poster)
+        card.addView(TextView(this).apply{
+            text=m.title
+            setTextColor(Color.WHITE)
+            textSize=16f
+            setTypeface(typeface,Typeface.BOLD)
+            maxLines=1
+        })
+        card.addView(TextView(this).apply{
+            text=if(m.releaseDate.isBlank()) m.overview else "${m.releaseDate} • ${m.overview}"
+            setTextColor(Color.LTGRAY)
+            textSize=12f
+            maxLines=3
+        },LinearLayout.LayoutParams(-1,0,1f))
+        card.addView(button("Watch options"){
+            startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(online.watchUrl(m))))
+        },LinearLayout.LayoutParams(-1,dp(42)))
+        return card
     }
 
     private fun renderMovies(list:List<Movie>){
@@ -186,7 +289,8 @@ class MainActivity : AppCompatActivity() {
             maxLines=2
         },LinearLayout.LayoutParams(-1,0,1f))
         val a=LinearLayout(this)
-        a.addView(button("▶ Play"){play(m)},LinearLayout.LayoutParams(0,dp(42),1f))
+        a.addView(button("▶ Watch"){play(m)},LinearLayout.LayoutParams(0,dp(42),1f))
+        a.addView(button("↓"){download(m)},LinearLayout.LayoutParams(dp(52),dp(42)))
         a.addView(button(if(isFavorite(m))"★" else "☆"){
             toggleFavorite(m)
             renderMovies(filtered())
@@ -209,6 +313,22 @@ class MainActivity : AppCompatActivity() {
             putExtra("title",m.title)
             putExtra("url",m.videoUrl)
         })
+    }
+
+    private fun download(m:Movie){
+        try {
+            val safeName=m.title.replace(Regex("[^A-Za-z0-9._-]"),"_") + ".mp4"
+            val request=DownloadManager.Request(Uri.parse(m.videoUrl))
+                .setTitle(m.title)
+                .setDescription("Downloading for offline viewing")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_MOVIES,safeName)
+            val dm=getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            dm.enqueue(request)
+            Toast.makeText(this,"Download started",Toast.LENGTH_SHORT).show()
+        } catch (_:Exception) {
+            Toast.makeText(this,"Download could not start",Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun toggleFavorite(m:Movie){prefs.edit().putBoolean(m.title,!isFavorite(m)).apply()}
