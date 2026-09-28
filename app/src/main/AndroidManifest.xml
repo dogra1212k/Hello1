@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:allowBackup="true" android:icon="@drawable/ic_streambox" android:label="StreamBox Free" android:theme="@style/Theme.StreamBox">
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_streambox_logo"
+        android:label="StreamBox Free"
+        android:theme="@style/Theme.StreamBox">
         <activity android:name=".AdminActivity" android:exported="false" />
         <activity android:name=".PlayerActivity" android:screenOrientation="sensorLandscape" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
