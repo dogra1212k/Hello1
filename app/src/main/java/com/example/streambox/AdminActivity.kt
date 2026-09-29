@@ -163,7 +163,7 @@ class AdminActivity : AppCompatActivity() {
             }
         } else {
             body.addView(Button(this).apply {
-                text="Reset demo catalog"
+                text="Reset open-film catalog"
                 isAllCaps=false
                 setOnClickListener {
                     catalog.resetDefaults()
@@ -220,41 +220,58 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private fun showAddMovieDialog() {
-        val wrap=LinearLayout(this).apply {
-            orientation=LinearLayout.VERTICAL
-            setPadding(dp(18),dp(8),dp(18),0)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), 0)
         }
-        val title=input("Title")
-        val category=input("Category")
-        val description=input("Description")
-        val video=input("Video URL")
-        val poster=input("Poster URL")
-        listOf(title,category,description,video,poster).forEach { wrap.addView(it) }
-
-        AlertDialog.Builder(this)
-            .setTitle("Add movie / series")
-            .setView(wrap)
-            .setPositiveButton("Add"){_,_->
-                val movie=Movie(
-                    title.text.toString().trim(),
-                    category.text.toString().trim(),
-                    description.text.toString().trim(),
-                    video.text.toString().trim(),
-                    poster.text.toString().trim()
-                )
-                if(movie.title.isBlank() || movie.category.isBlank() || !movie.videoUrl.startsWith("http")) {
-                    Toast.makeText(this,"Title, category and valid video URL are required",Toast.LENGTH_LONG).show()
-                } else if(firebase.isAvailable()) {
-                    firebase.addMovie(movie) { ok,msg ->
-                        if(ok) showCatalog() else Toast.makeText(this,msg ?: "Add failed",Toast.LENGTH_LONG).show()
+        val title = input("Title")
+        val category = input("Category")
+        val description = input("Description / credits")
+        val video = input("Direct HTTPS .mp4 / .m3u8 / .mpd URL")
+        val poster = input("Poster URL (optional)")
+        val tmdb = input("TMDB ID (optional, links an existing title)").apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val types = listOf("movie", "tv", "music", "video")
+        val type = Spinner(this).apply {
+            adapter = ArrayAdapter(this@AdminActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("Full movie", "Series episode", "Music video", "Other video"))
+        }
+        listOf(title, category, description, video, poster, tmdb, type).forEach { wrap.addView(it) }
+        wrap.addView(TextView(this).apply {
+            text = "Add a full video you own or have permission to stream. TMDB ID connects it to the matching movie/series card."
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("Add full video")
+            .setView(ScrollView(this).apply { addView(wrap) })
+            .setPositiveButton("Add", null).setNegativeButton("Cancel", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val idText = tmdb.text.toString().trim()
+                val id = if (idText.isBlank()) 0 else idText.toIntOrNull()
+                val movie = Movie(title.text.toString().trim(), category.text.toString().trim(),
+                    description.text.toString().trim(), video.text.toString().trim(), poster.text.toString().trim(),
+                    tmdbId = id ?: 0, mediaType = types[type.selectedItemPosition])
+                when {
+                    movie.title.isBlank() -> title.error = "Title is required"
+                    movie.category.isBlank() -> category.error = "Category is required"
+                    !MediaSourcePolicy.isPlayable(movie.videoUrl) -> video.error = "Enter a direct HTTPS video file or stream URL"
+                    id == null || id < 0 || (idText.isNotBlank() && id == 0) -> tmdb.error = "Enter a valid positive TMDB ID"
+                    movie.tmdbId > 0 && movie.mediaType !in listOf("movie", "tv") -> tmdb.error = "TMDB ID is for movies or series only"
+                    firebase.isAvailable() -> {
+                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                        firebase.addMovie(movie) { ok, msg ->
+                            if (isDestroyed || isFinishing) return@addMovie
+                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                            if (ok) { dialog.dismiss(); showCatalog() }
+                            else Toast.makeText(this, msg ?: "Add failed", Toast.LENGTH_LONG).show()
+                        }
                     }
-                } else {
-                    catalog.add(movie)
-                    showCatalog()
+                    else -> { catalog.add(movie); dialog.dismiss(); showCatalog() }
                 }
             }
-            .setNegativeButton("Cancel",null)
-            .show()
+        }
+        dialog.show()
     }
 
     private fun input(h:String)=EditText(this).apply { hint=h; setSingleLine(true) }

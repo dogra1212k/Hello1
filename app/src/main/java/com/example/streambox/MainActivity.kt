@@ -1,12 +1,9 @@
 package com.example.streambox
 
-import android.app.DownloadManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
-import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -16,7 +13,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import java.net.URLEncoder
 import java.util.concurrent.Future
 
 class MainActivity : AppCompatActivity() {
@@ -32,13 +28,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var heading: TextView
     private lateinit var status: TextView
     private lateinit var more: Button
-    private lateinit var videoActions: LinearLayout
     private var request: Future<*>? = null
     private var feed: CatalogFeed? = null
-    private var screen = "HOME"
+    private var screen = "WATCH"
     private var query = ""
     private var screenGeneration = 0
-    private var fallbackVisible = false
+    private var savedMovies: List<Movie> = emptyList()
+    private var cloudLoading = false
+    private var cloudError: String? = null
     private var localMovieCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,12 +48,10 @@ class MainActivity : AppCompatActivity() {
         buildUi()
         query = savedInstanceState?.getString("query").orEmpty()
         searchBox.setText(savedInstanceState?.getString("search") ?: query)
-        when (savedInstanceState?.getString("screen")) {
-            "MUSIC" -> showMusic()
-            "LOCAL" -> showLocal()
-            else -> openFeed(runCatching { CatalogFeed.valueOf(savedInstanceState?.getString("screen") ?: "HOME") }
-                .getOrDefault(CatalogFeed.HOME), query)
-        }
+        savedMovies = catalog.getMovies()
+        val restored = savedInstanceState?.getString("screen") ?: "WATCH"
+        val restoredFeed = runCatching { CatalogFeed.valueOf(restored) }.getOrNull()
+        if (restoredFeed != null) openFeed(restoredFeed, query) else showSaved(restored, query)
     }
 
     private fun buildUi() {
@@ -83,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-2, dp(44)))
         root.addView(top)
         searchBox = EditText(this).apply {
-            hint = "Search movies, series, music & videos"
+            hint = "Search movies, music & videos"
             setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
@@ -94,22 +89,17 @@ class MainActivity : AppCompatActivity() {
         root.addView(searchBox, LinearLayout.LayoutParams(-1, dp(48)))
         val searchTypes = LinearLayout(this)
         searchTypes.addView(button("All") { runSearch() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-        searchTypes.addView(button("Music") { videoSearch(true) }, LinearLayout.LayoutParams(0, dp(44), 1f))
-        searchTypes.addView(button("Videos") { videoSearch(false) }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        searchTypes.addView(button("Music") { showSaved("MUSIC", searchBox.text.toString().trim()) }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        searchTypes.addView(button("Videos") { showSaved("LOCAL", searchBox.text.toString().trim()) }, LinearLayout.LayoutParams(0, dp(44), 1f))
         root.addView(searchTypes)
         val tabs = LinearLayout(this)
-        listOf("Home" to { openFeed(CatalogFeed.HOME) }, "Latest Hindi" to { openFeed(CatalogFeed.LATEST_HINDI) },
-            "Music" to { showMusic() }, "Series" to { openFeed(CatalogFeed.SERIES) }, "My Videos" to { showLocal() })
+        listOf("Home" to { showSaved("WATCH") }, "Hindi Movies" to { openFeed(CatalogFeed.HOME) },
+            "Latest Hindi" to { openFeed(CatalogFeed.LATEST_HINDI) }, "Music" to { showSaved("MUSIC") },
+            "Series" to { openFeed(CatalogFeed.SERIES) }, "My Videos" to { showSaved("LOCAL") })
             .forEach { (name, action) -> tabs.addView(button(name, action), LinearLayout.LayoutParams(-2, dp(44))) }
         root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
         heading = label("", 20f).apply { setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(8), 0, dp(4)) }
         root.addView(heading)
-        videoActions = LinearLayout(this).apply {
-            addView(button("♫ Matching music") { openVideoSearch("$query music official video", "Music") }, LinearLayout.LayoutParams(0, dp(40), 1f))
-            addView(button("▶ Matching videos") { openVideoSearch(query, "Videos") }, LinearLayout.LayoutParams(0, dp(40), 1f))
-            visibility = View.GONE
-        }
-        root.addView(videoActions)
         grid = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, 3)
             adapter = cards
@@ -123,7 +113,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
         status = label("", 12f).apply { setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, dp(4)) }
         root.addView(status)
-        more = button("Load more") { loadMore() }
+        more = button("Load more") { if (feed != null) loadMore() else syncCloud() }
         root.addView(more, LinearLayout.LayoutParams(-1, dp(44)))
         setContentView(root)
     }
@@ -134,11 +124,9 @@ class MainActivity : AppCompatActivity() {
         request?.cancel(true)
         pager.reset()
         feed = null
-        fallbackVisible = false
         localMovieCount = 0
         cards.replace(emptyList())
         grid.scrollToPosition(0)
-        videoActions.visibility = View.GONE
         more.visibility = View.GONE
         status.text = ""
     }
@@ -149,8 +137,7 @@ class MainActivity : AppCompatActivity() {
         query = search
         heading.text = selected.title
         if (selected == CatalogFeed.SEARCH) {
-            videoActions.visibility = View.VISIBLE
-            val local = catalog.getMovies().filter { it.title.contains(query, true) || it.category.contains(query, true) }
+            val local = searchMovies()
             localMovieCount = local.size
             cards.append(local.map(::localTile))
         }
@@ -168,18 +155,10 @@ class MainActivity : AppCompatActivity() {
                 val previousSize = pager.items.size
                 if (page == null) {
                     if (!pager.fail(ticket, error ?: "Could not load movies. Tap Retry.")) return@runOnUiThread
-                    if (currentFeed == CatalogFeed.HOME && previousSize == 0 && !fallbackVisible) {
-                        fallbackVisible = true
-                        cards.replace(catalog.getMovies().map(::localTile))
-                    }
                     renderStatus()
                     return@runOnUiThread
                 }
                 if (!pager.accept(ticket, page)) return@runOnUiThread
-                if (fallbackVisible) {
-                    cards.replace(emptyList())
-                    fallbackVisible = false
-                }
                 cards.append(pager.items.drop(previousSize).map(::onlineTile))
                 renderStatus()
                 // Latest fills 120 unique titles; scroll loading continues beyond the initial batch.
@@ -197,11 +176,11 @@ class MainActivity : AppCompatActivity() {
         val count = pager.items.size
         heading.text = "${currentFeed.title}${if (count > 0) " · $count" else ""}"
         status.text = when {
-            pager.error != null -> (if (fallbackVisible) "Showing saved videos. " else "") + pager.error
+            pager.error != null -> pager.error
             pager.loading && count == 0 -> "Loading…"
             pager.loading -> "$count titles loaded • Loading more…"
             !pager.hasMore -> if (count + localMovieCount == 0) "No titles found. Try another search." else "All available titles loaded."
-            else -> "$count titles loaded • Scroll for more"
+            else -> "$count titles • Watch appears when a full video is available"
         }
         more.visibility = if (pager.hasMore || pager.error != null) View.VISIBLE else View.GONE
         more.isEnabled = !pager.loading
@@ -215,97 +194,128 @@ class MainActivity : AppCompatActivity() {
 
     private fun runSearch() {
         val text = searchBox.text.toString().trim()
-        if (text.isBlank()) openFeed(CatalogFeed.HOME) else openFeed(CatalogFeed.SEARCH, text)
+        if (text.isBlank()) showSaved("WATCH") else openFeed(CatalogFeed.SEARCH, text)
     }
 
-    private fun videoSearch(music: Boolean) {
-        val text = searchBox.text.toString().trim()
-        openVideoSearch(if (text.isBlank()) {
-            if (music) "latest hindi songs official video" else "latest hindi official videos"
-        } else text + if (music) " music official video" else "", if (music) "Music" else "Videos")
+    private fun searchMovies() = savedMovies.filter { MediaSourcePolicy.matches(it, query) }
+
+    private fun showSaved(name: String, search: String = "") {
+        resetScreen(name)
+        query = search
+        renderSaved()
     }
 
-    private fun openVideoSearch(text: String, title: String) {
-        startActivity(Intent(this, WebVideoActivity::class.java).apply {
-            putExtra("title", title)
-            putExtra("url", "https://m.youtube.com/results?search_query=" + URLEncoder.encode(text, "UTF-8"))
-        })
-    }
-
-    private fun showMusic() {
-        resetScreen("MUSIC")
-        heading.text = "Music Videos"
-        val topics = listOf("Latest Hindi", "New Bollywood", "Latest Punjabi", "Romantic", "Party Hits", "Movie Songs", "Sad Songs", "Trending", "New Indian")
-        cards.replace(topics.map { title -> MovieGridAdapter.Tile(title, "Official music videos", action = "♫ Browse",
-            onClick = { openVideoSearch("$title songs official video", title) }) })
-        status.text = "Browse and watch inside StreamBox."
-    }
-
-    private fun showLocal() {
-        resetScreen("LOCAL")
-        heading.text = "My Videos"
-        showSavedMovies(catalog.getMovies())
-        val generation = screenGeneration
-        if (firebase.isAvailable() && firebase.currentEmail() != null) firebase.loadMovies { movies, _ ->
-            runOnUiThread {
-                if (isDestroyed || isFinishing || generation != screenGeneration) return@runOnUiThread
-                if (movies != null && movies.isNotEmpty()) {
-                    catalog.saveMovies(movies)
-                    showSavedMovies(movies)
-                }
+    private fun renderSaved() {
+        val movies = searchMovies().filter {
+            when (screen) {
+                "WATCH" -> MediaSourcePolicy.isPlayable(it.videoUrl) && !MediaSourcePolicy.isMusic(it)
+                "MUSIC" -> MediaSourcePolicy.isMusic(it)
+                else -> true
             }
+        }
+        heading.text = when (screen) {
+            "WATCH" -> "Watch now · ${movies.size}"
+            "MUSIC" -> "Music videos · ${movies.size}"
+            else -> "My Videos · ${movies.size}"
+        }
+        cards.replace(movies.map(::localTile))
+        status.text = when {
+            cloudLoading -> "Updating videos…"
+            cloudError != null -> "Showing saved videos. $cloudError"
+            movies.isEmpty() -> if (query.isNotBlank()) "No matching videos. Try another search."
+                else "No videos added here yet."
+            screen == "WATCH" -> "Complete films • Long press for details, download and favorites"
+            else -> "${movies.size} videos • Long press for details and options"
+        }
+        more.visibility = if (cloudError != null || cloudLoading) View.VISIBLE else View.GONE
+        more.isEnabled = !cloudLoading
+        more.text = if (cloudLoading) "Updating…" else "Retry"
+    }
+
+    private fun refreshCards() {
+        if (feed == null) renderSaved() else {
+            val local = if (feed == CatalogFeed.SEARCH) searchMovies() else emptyList()
+            localMovieCount = local.size
+            cards.replace(local.map(::localTile) + pager.items.map(::onlineTile))
+            renderStatus()
         }
     }
 
-    private fun showSavedMovies(movies: List<Movie>) {
-        cards.replace(movies.map(::localTile))
-        status.text = "${movies.size} videos • Long press for download and favorites"
+    override fun onResume() {
+        super.onResume()
+        if (!::grid.isInitialized) return
+        if (!session.isLoggedIn()) {
+            startActivity(Intent(this, AuthActivity::class.java)); finish(); return
+        }
+        savedMovies = catalog.getMovies()
+        refreshCards()
+        syncCloud()
     }
 
-    private fun onlineTile(movie: OnlineMovie) = MovieGridAdapter.Tile(movie.title,
-        listOf(movie.releaseDate, if (movie.mediaType == "tv") "Series" else "Movie").filter { it.isNotBlank() }.joinToString(" · "),
-        movie.posterUrl, "▶ Trailer", onClick = {
-            startActivity(Intent(this, TrailerActivity::class.java).apply {
-                putExtra("movieId", movie.id); putExtra("mediaType", movie.mediaType); putExtra("title", movie.title)
+    private fun syncCloud() {
+        if (cloudLoading || !firebase.isAvailable() || firebase.currentEmail() == null) return
+        cloudLoading = true
+        cloudError = null
+        if (feed == null) renderSaved()
+        firebase.loadMovies { movies, _ -> runOnUiThread {
+            if (isDestroyed || isFinishing) return@runOnUiThread
+            cloudLoading = false
+            if (movies != null) {
+                // Empty cloud responses clear removed titles, while keeping local films.
+                catalog.saveCloudMovies(movies)
+                savedMovies = catalog.getMovies()
+            } else cloudError = "Could not update videos. Check your connection and retry."
+            refreshCards()
+        } }
+    }
+
+    private fun onlineTile(movie: OnlineMovie): MovieGridAdapter.Tile {
+        val stream = MediaSourcePolicy.findMovie(movie, savedMovies)
+        return MovieGridAdapter.Tile(movie.title,
+            listOf(movie.releaseDate, if (movie.mediaType == "tv") "Series" else "Movie")
+                .filter { it.isNotBlank() }.joinToString(" · "),
+            movie.posterUrl, if (stream != null) "▶ Watch" else "Unavailable", onClick = {
+                if (stream != null) play(stream) else android.app.AlertDialog.Builder(this)
+                    .setTitle(movie.title)
+                    .setMessage(listOf(movie.overview, "Full video abhi StreamBox mein available nahi hai.")
+                        .filter { it.isNotBlank() }.joinToString("\n\n"))
+                    .setPositiveButton("OK", null).show()
             })
-        })
+    }
 
     private fun localTile(movie: Movie) = MovieGridAdapter.Tile(movie.title, movie.category, movie.posterUrl,
-        "▶ Watch", onClick = { play(movie) }, onLongClick = { movieOptions(movie) })
+        if (MediaSourcePolicy.isPlayable(movie.videoUrl)) "▶ Watch" else "Unavailable",
+        onClick = { play(movie) }, onLongClick = { movieOptions(movie) })
 
     private fun play(movie: Movie) {
-        val web = VideoNavigation.isYouTubeWebUrl(movie.videoUrl)
-        startActivity(Intent(this, if (web) WebVideoActivity::class.java else PlayerActivity::class.java).apply {
+        if (!MediaSourcePolicy.isPlayable(movie.videoUrl)) {
+            Toast.makeText(this, "Is video ka direct stream available nahi hai.", Toast.LENGTH_LONG).show()
+            return
+        }
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("title", movie.title); putExtra("url", movie.videoUrl)
+            putExtra("description", movie.description)
         })
     }
 
     private fun movieOptions(movie: Movie) {
         val favorite = prefs.getBoolean(movie.title, false)
-        android.app.AlertDialog.Builder(this).setTitle(movie.title)
-            .setItems(arrayOf("Watch", "Download", if (favorite) "Remove favorite" else "Add favorite")) { _, which ->
-                when (which) {
-                    0 -> play(movie)
-                    1 -> download(movie)
-                    2 -> { prefs.edit().putBoolean(movie.title, !favorite).apply()
-                        Toast.makeText(this, if (favorite) "Favorite removed" else "Favorite saved", Toast.LENGTH_SHORT).show() }
-                }
-            }.show()
-    }
-
-    private fun download(movie: Movie) {
-        if (VideoNavigation.isYouTubeWebUrl(movie.videoUrl)) {
-            Toast.makeText(this, "Download is available for direct video files only.", Toast.LENGTH_LONG).show()
-            return
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (MediaSourcePolicy.isPlayable(movie.videoUrl)) actions += "Watch" to { play(movie) }
+        if (MediaSourcePolicy.isDownloadable(movie.videoUrl)) actions += "Download" to {
+            MovieDownloads.start(this, movie.title, movie.videoUrl)
         }
-        try {
-            val name = movie.title.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".mp4"
-            val download = DownloadManager.Request(Uri.parse(movie.videoUrl)).setTitle(movie.title)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_MOVIES, name)
-            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(download)
-            Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) { Toast.makeText(this, "Download unavailable for this video", Toast.LENGTH_LONG).show() }
+        actions += "Details & credits" to {
+            android.app.AlertDialog.Builder(this).setTitle(movie.title)
+                .setMessage(movie.description.ifBlank { movie.category }).setPositiveButton("OK", null).show()
+            Unit
+        }
+        actions += (if (favorite) "Remove favorite" else "Add favorite") to {
+            prefs.edit().putBoolean(movie.title, !favorite).apply()
+            Toast.makeText(this, if (favorite) "Favorite removed" else "Favorite saved", Toast.LENGTH_SHORT).show()
+        }
+        android.app.AlertDialog.Builder(this).setTitle(movie.title)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }.show()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

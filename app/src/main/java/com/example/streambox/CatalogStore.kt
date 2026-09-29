@@ -1,70 +1,40 @@
 package com.example.streambox
 
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
 
 class CatalogStore(context: Context) {
     private val prefs = context.getSharedPreferences("catalog", Context.MODE_PRIVATE)
+    private val defaults by lazy {
+        context.assets.open("open_movies.json").bufferedReader().use { MovieJson.decode(it.readText()) }
+    }
 
-    private val defaults = listOf(
-        Movie("Big Buck Bunny","Animation","Open movie demo. Replace this URL with content you own or are licensed to stream.","https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg"),
-        Movie("Elephant Dream","Sci-Fi","Open movie demo for testing the streaming player.","https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg"),
-        Movie("For Bigger Blazes","Action","Short demo video for your home feed.","https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg"),
-        Movie("For Bigger Escape","Adventure","Short demo video. Add your own catalog later.","https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerEscapes.jpg"),
-        Movie("Sintel","Movies","Open movie available for in-app playback.","https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/Sintel.jpg"),
-        Movie("Tears of Steel","Movies","Open film demo with direct playback inside StreamBox.","https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/TearsOfSteel.jpg"),
-        Movie("Series Episode 1","Web Series","Demo web-series episode using a direct licensed test stream.","https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4","https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerJoyrides.jpg")
-    )
+    private fun localMovies(): List<Movie> {
+        val raw = prefs.getString("movies", null) ?: return defaults
+        val movies = runCatching { MovieJson.decode(raw) }.getOrElse { return defaults }
+        // Migrate only the old built-in demos; retain every user-created entry.
+        return movies.mapNotNull { movie ->
+            if (movie.id.isBlank() && movie.videoUrl in oldDemos) null
+            else defaults.firstOrNull { it.videoUrl == movie.videoUrl }?.copy(tmdbId = movie.tmdbId) ?: movie
+        }
+    }
 
     fun getMovies(): MutableList<Movie> {
-        val raw = prefs.getString("movies", null) ?: return defaults.toMutableList()
-        return try {
-            val arr = JSONArray(raw)
-            MutableList(arr.length()) { i ->
-                val o = arr.getJSONObject(i)
-                Movie(
-                    o.optString("title"),
-                    o.optString("category"),
-                    o.optString("description"),
-                    o.optString("videoUrl"),
-                    o.optString("posterUrl"),
-                    o.optString("id")
-                )
-            }
-        } catch (_: Exception) {
-            defaults.toMutableList()
-        }
+        val cloud = runCatching { MovieJson.decode(prefs.getString("cloudMovies", "[]") ?: "[]") }.getOrDefault(emptyList())
+        return (cloud + localMovies()).distinctBy { it.videoUrl.ifBlank { it.id + it.title } }.toMutableList()
     }
 
-    fun saveMovies(movies: List<Movie>) {
-        val arr = JSONArray()
-        movies.forEach { m ->
-            arr.put(JSONObject().apply {
-                put("title", m.title)
-                put("category", m.category)
-                put("description", m.description)
-                put("videoUrl", m.videoUrl)
-                put("posterUrl", m.posterUrl)
-                put("id", m.id)
-            })
-        }
-        prefs.edit().putString("movies", arr.toString()).apply()
-    }
-
-    fun add(movie: Movie) {
-        val list = getMovies()
-        list.add(movie)
-        saveMovies(list)
-    }
-
+    fun saveMovies(movies: List<Movie>) = prefs.edit().putString("movies", MovieJson.encode(movies)).apply()
+    fun saveCloudMovies(movies: List<Movie>) = prefs.edit().putString("cloudMovies", MovieJson.encode(movies)).apply()
+    fun add(movie: Movie) = saveMovies(localMovies() + movie)
     fun removeAt(index: Int) {
-        val list = getMovies()
-        if (index in list.indices) {
-            list.removeAt(index)
-            saveMovies(list)
-        }
+        val selected = getMovies().getOrNull(index) ?: return
+        saveMovies(localMovies().filterNot { it == selected })
     }
-
     fun resetDefaults() = prefs.edit().remove("movies").apply()
+
+    companion object {
+        private val oldDemos = listOf("ForBiggerBlazes", "ForBiggerEscapes", "ForBiggerJoyrides").map {
+            "https://storage.googleapis.com/gtv-videos-bucket/sample/$it.mp4"
+        }.toSet()
+    }
 }

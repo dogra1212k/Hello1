@@ -9,3 +9,6 @@ local.properties
 .cxx/
 app/build/
 app/google-services.json
+
+__pycache__/
+*.pyc

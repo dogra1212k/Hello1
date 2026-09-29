@@ -83,12 +83,4 @@ class OnlineMovieServiceTest {
         service.close()
     }
 
-    @Test fun choosesOfficialTrailerAndRejectsMalformedEmbedKeys() {
-        val key = OnlineMovieService.trailerFromJson("""{"results":[
-            {"site":"YouTube","type":"Trailer","key":"bad\"<key>","official":true},
-            {"site":"YouTube","type":"Teaser","key":"abcdefghijk","official":false},
-            {"site":"YouTube","type":"Trailer","key":"abcdefghij2","official":true}
-        ]}""")
-        assertEquals("abcdefghij2", key)
-    }
 }

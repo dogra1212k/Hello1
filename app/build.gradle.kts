@@ -17,8 +17,8 @@ android {
         applicationId = "com.example.streambox"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.6.1"
+        versionCode = 9
+        versionName = "1.7.0"
         buildConfigField("String", "TMDB_API_KEY", "\"" + tmdbApiKey + "\"")
     }
 
@@ -43,6 +43,8 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
 
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth")

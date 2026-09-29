@@ -1,0 +1,38 @@
+[
+  {
+    "id": "open-big-buck-bunny",
+    "title": "Big Buck Bunny",
+    "category": "Animation · Full short film",
+    "description": "A gentle rabbit takes on three mischievous forest animals. Complete short film, about 10 minutes, without dialogue. © 2008 Blender Foundation / peach.blender.org. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ . Streamed unchanged.",
+    "videoUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    "posterUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
+    "minimumDurationSeconds": 550
+  },
+  {
+    "id": "open-elephants-dream",
+    "title": "Elephants Dream",
+    "category": "Sci-Fi · Full short film",
+    "description": "Two characters explore a strange mechanical world. Complete short film, about 11 minutes, English audio. © 2006 Blender Foundation / Netherlands Media Art Institute / orange.blender.org. CC BY 2.5: https://creativecommons.org/licenses/by/2.5/ . Streamed unchanged.",
+    "videoUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    "posterUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg",
+    "minimumDurationSeconds": 600
+  },
+  {
+    "id": "open-sintel",
+    "title": "Sintel",
+    "category": "Fantasy · Full short film",
+    "description": "A young woman searches for the dragon she once befriended. Complete short film, about 15 minutes, English audio. © 2010 Blender Foundation / durian.blender.org. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ . Streamed unchanged.",
+    "videoUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+    "posterUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/Sintel.jpg",
+    "minimumDurationSeconds": 800
+  },
+  {
+    "id": "open-tears-of-steel",
+    "title": "Tears of Steel",
+    "category": "Sci-Fi · Full short film",
+    "description": "A team in Amsterdam tries to save the world from destructive robots. Complete short film, about 12 minutes, English audio. © 2012 Blender Foundation / mango.blender.org. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ . Streamed unchanged.",
+    "videoUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+    "posterUrl": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/TearsOfSteel.jpg",
+    "minimumDurationSeconds": 650
+  }
+]

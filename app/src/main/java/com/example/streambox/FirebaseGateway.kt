@@ -64,7 +64,9 @@ class FirebaseGateway(private val context: Context) {
                         description = d.getString("description") ?: "",
                         videoUrl = d.getString("videoUrl") ?: "",
                         posterUrl = d.getString("posterUrl") ?: "",
-                        id = d.id
+                        id = d.id,
+                        tmdbId = (d.getLong("tmdbId") ?: 0).toInt(),
+                        mediaType = d.getString("mediaType") ?: "movie"
                     )
                 }
                 onResult(list, null)
@@ -79,7 +81,9 @@ class FirebaseGateway(private val context: Context) {
             "category" to movie.category,
             "description" to movie.description,
             "videoUrl" to movie.videoUrl,
-            "posterUrl" to movie.posterUrl
+            "posterUrl" to movie.posterUrl,
+            "tmdbId" to movie.tmdbId,
+            "mediaType" to movie.mediaType
         )
         FirebaseFirestore.getInstance().collection("movies").add(data)
             .addOnSuccessListener { onResult(true, null) }

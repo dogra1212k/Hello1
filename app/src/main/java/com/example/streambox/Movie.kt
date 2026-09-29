@@ -6,5 +6,7 @@ data class Movie(
     val description: String,
     val videoUrl: String,
     val posterUrl: String,
-    val id: String = ""
+    val id: String = "",
+    val tmdbId: Int = 0,
+    val mediaType: String = "movie"
 )

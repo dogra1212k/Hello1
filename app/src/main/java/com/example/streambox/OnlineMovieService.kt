@@ -56,24 +56,6 @@ class OnlineMovieService(
         return "https://api.themoviedb.org/3/$path?" + params.entries.joinToString("&") { "${it.key}=${enc(it.value)}" }
     }
 
-    fun trailerKey(mediaType: String, movieId: Int, callback: (String?, String?) -> Unit): Future<*> {
-        return executor.submit {
-            try {
-                check(isConfigured()) { "Online trailers are unavailable in this build." }
-                val type = if (mediaType == "tv") "tv" else "movie"
-                var key: String? = null
-                for (language in listOf("hi-IN", "en-US")) {
-                    val body = transport("https://api.themoviedb.org/3/$type/$movieId/videos?api_key=${enc(apiKey)}&language=$language")
-                    key = trailerFromJson(body)
-                    if (key != null || Thread.currentThread().isInterrupted) break
-                }
-                if (!Thread.currentThread().isInterrupted) callback(key, null)
-            } catch (e: Exception) {
-                if (!Thread.currentThread().isInterrupted) callback(null, friendlyError(e))
-            }
-        }
-    }
-
     fun close() { executor.shutdownNow() }
 
     companion object {
@@ -99,15 +81,6 @@ class OnlineMovieService(
                 }
             }
             return OnlinePage(root.optInt("page", 1), root.optInt("total_pages", 0), root.optInt("total_results", 0), items)
-        }
-
-        internal fun trailerFromJson(body: String): String? {
-            val videos = JSONObject(body).optJSONArray("results") ?: return null
-            val candidates = (0 until videos.length()).mapNotNull { videos.optJSONObject(it) }
-                .filter { it.optString("site") == "YouTube" && it.optString("key").matches(Regex("[A-Za-z0-9_-]{11}")) }
-            return candidates.sortedByDescending {
-                (if (it.optBoolean("official")) 2 else 0) + (if (it.optString("type") == "Trailer") 1 else 0)
-            }.firstOrNull()?.optString("key")
         }
 
         private fun todayInIndia() = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
