@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -19,13 +20,16 @@ open class InAppVideoActivity : AppCompatActivity() {
     protected lateinit var webView: WebView
     private lateinit var root: FrameLayout
     private lateinit var normal: LinearLayout
-    private lateinit var progress: ProgressBar
+    private lateinit var loadingBar: ProgressBar
+    private lateinit var reloadButton: Button
     private lateinit var message: TextView
     private lateinit var retry: Button
     private lateinit var alternatives: Button
     private var fullscreen: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var reloadAction: (() -> Unit)? = null
+    private var trailerKey: String? = null
+    private val trailerBaseUrl get() = "https://$packageName/"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,7 +44,7 @@ open class InAppVideoActivity : AppCompatActivity() {
         }
         val toolbar = LinearLayout(this)
         toolbar.addView(Button(this).apply {
-            text = "‹"; contentDescription = "Back"; setOnClickListener { onBackPressed() }
+            text = "‹"; contentDescription = "Back"; setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
         toolbar.addView(TextView(this).apply {
             text = intent.getStringExtra("title") ?: "Videos"
@@ -48,12 +52,13 @@ open class InAppVideoActivity : AppCompatActivity() {
             gravity = android.view.Gravity.CENTER_VERTICAL
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, dp(48), 1f))
-        toolbar.addView(Button(this).apply {
+        reloadButton = Button(this).apply {
             text = "↻"; contentDescription = "Reload"; setOnClickListener { reloadAction?.invoke() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        }
+        toolbar.addView(reloadButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         normal.addView(toolbar)
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
-        normal.addView(progress, LinearLayout.LayoutParams(-1, dp(3)))
+        loadingBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        normal.addView(loadingBar, LinearLayout.LayoutParams(-1, dp(3)))
         message = TextView(this).apply { setTextColor(Color.LTGRAY); setPadding(dp(12), dp(6), dp(12), dp(6)); visibility = View.GONE }
         normal.addView(message)
         val actions = LinearLayout(this)
@@ -77,17 +82,27 @@ open class InAppVideoActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = route(view, request.url.toString())
                 @Deprecated("Legacy WebView callback")
                 override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = route(view, url)
-                override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { progress.visibility = View.VISIBLE }
-                override fun onPageFinished(view: WebView, url: String?) { progress.visibility = View.GONE }
+                override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                    clearProblem()
+                    loadingBar.visibility = View.VISIBLE
+                    reloadButton.isEnabled = true
+                    val key = trailerKey
+                    reloadAction = if (url == trailerBaseUrl && key != null) {
+                        { loadTrailer(key) }
+                    } else {
+                        { reloadPage() }
+                    }
+                }
+                override fun onPageFinished(view: WebView, url: String?) { loadingBar.visibility = View.GONE }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame) showProblem("Video page could not load. Check your connection and retry.") { view.reload() }
+                    if (request.isForMainFrame) showProblem("Video page could not load. Check your connection and retry.") { reloadPage() }
                 }
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                    if (request.isForMainFrame) showProblem("Video service unavailable (${response.statusCode}).") { view.reload() }
+                    if (request.isForMainFrame) showProblem("Video service unavailable (${response.statusCode}).") { reloadPage() }
                 }
             }
             webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView, value: Int) { progress.progress = value }
+                override fun onProgressChanged(view: WebView, value: Int) { loadingBar.progress = value }
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                     if (fullscreen != null) { callback.onCustomViewHidden(); return }
                     fullscreen = view
@@ -103,7 +118,17 @@ open class InAppVideoActivity : AppCompatActivity() {
             }
         }
         normal.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
+        reloadAction = { reloadPage() }
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    fullscreen != null -> exitFullscreen()
+                    webView.canGoBack() -> webView.goBack()
+                    else -> finish()
+                }
+            }
+        })
     }
 
     private fun route(view: WebView, raw: String): Boolean {
@@ -121,6 +146,7 @@ open class InAppVideoActivity : AppCompatActivity() {
         val url = VideoNavigation.inAppUrl(raw)
         if (url == null) { showProblem("This video link is not supported."); return }
         clearProblem()
+        reloadButton.isEnabled = true
         reloadAction = { loadVideoUrl(url) }
         webView.loadUrl(url)
     }
@@ -128,6 +154,8 @@ open class InAppVideoActivity : AppCompatActivity() {
     protected fun loadTrailer(key: String) {
         if (!key.matches(Regex("[A-Za-z0-9_-]{11}"))) { showProblem("Trailer unavailable."); return }
         clearProblem()
+        trailerKey = key
+        reloadButton.isEnabled = true
         reloadAction = { loadTrailer(key) }
         // YouTube requires an app-specific HTTP Referer for Android WebView embeds.
         val origin = "https://$packageName"
@@ -141,18 +169,26 @@ open class InAppVideoActivity : AppCompatActivity() {
               allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
             </body></html>
         """.trimIndent()
-        webView.loadDataWithBaseURL("$origin/", html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL(trailerBaseUrl, html, "text/html", "UTF-8", null)
     }
 
     protected fun showAlternative(query: String) {
         alternatives.visibility = View.VISIBLE
+        alternatives.isEnabled = true
         alternatives.setOnClickListener { loadVideoUrl(VideoNavigation.searchUrl(query)) }
     }
 
-    protected fun showLoading() { progress.visibility = View.VISIBLE }
+    protected fun showLoading() {
+        clearProblem()
+        loadingBar.visibility = View.VISIBLE
+        reloadButton.isEnabled = false
+        alternatives.isEnabled = false
+    }
 
     protected fun showProblem(text: String, onRetry: (() -> Unit)? = null) {
-        progress.visibility = View.GONE
+        loadingBar.visibility = View.GONE
+        reloadButton.isEnabled = true
+        alternatives.isEnabled = true
         message.text = text
         message.visibility = View.VISIBLE
         retry.visibility = if (onRetry != null) View.VISIBLE else View.GONE
@@ -162,22 +198,19 @@ open class InAppVideoActivity : AppCompatActivity() {
 
     private fun clearProblem() { message.visibility = View.GONE; retry.visibility = View.GONE }
 
+    private fun reloadPage() {
+        clearProblem()
+        webView.reload()
+    }
+
     private fun exitFullscreen() {
         fullscreen?.let { root.removeView(it) }
         fullscreen = null
         normal.visibility = View.VISIBLE
-        fullscreenCallback?.onCustomViewHidden()
+        val callback = fullscreenCallback
         fullscreenCallback = null
+        callback?.onCustomViewHidden()
         WindowCompat.getInsetsController(window, root).show(WindowInsetsCompat.Type.systemBars())
-    }
-
-    @Deprecated("Uses WebView history before finishing the activity")
-    override fun onBackPressed() {
-        when {
-            fullscreen != null -> exitFullscreen()
-            webView.canGoBack() -> webView.goBack()
-            else -> super.onBackPressed()
-        }
     }
 
     override fun onPause() {
@@ -196,6 +229,7 @@ open class InAppVideoActivity : AppCompatActivity() {
             webView.stopLoading()
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.webChromeClient = null
+            webView.webViewClient = WebViewClient()
             webView.destroy()
         }
         super.onDestroy()

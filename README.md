@@ -1,6 +1,8 @@
 # Hello1 / StreamBox Free
 
-Android movie catalog and in-app video player, version 1.6.
+Android movie catalog and in-app video player, version 1.6.1.
+
+Version 1.6.1 fixes the video-screen compilation error, keeps Reload on the current page after navigating, clears old connection errors on retry, and handles system Back through fullscreen and browser history. Trailer requests disable reload while loading and ignore obsolete callbacks.
 
 ## Movies and search
 
