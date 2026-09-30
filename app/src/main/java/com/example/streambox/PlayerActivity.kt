@@ -84,6 +84,13 @@ class PlayerActivity : AppCompatActivity() {
             player?.prepare()
             player?.play()
         })
+        if (intent.getStringExtra("mediaType") !in setOf("music", "video")) {
+            errorPanel.addView(button("Watch options") {
+                startActivity(WatchOptionsActivity.createIntent(this, titleText,
+                    intent.getIntExtra("tmdbId", 0), intent.getStringExtra("mediaType") ?: "movie",
+                    intent.getIntExtra("year", 0)))
+            })
+        }
         videoFrame.addView(errorPanel, FrameLayout.LayoutParams(-1, -1))
         root.addView(videoFrame, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)

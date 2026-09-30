@@ -3,7 +3,7 @@ package com.example.streambox
 import java.net.URI
 import java.util.Locale
 
-/** Only direct media is playable. Web pages and app links never open a browser/player app. */
+/** Only direct media enters the native player. Discovery pages use the separate Watch options screen. */
 object MediaSourcePolicy {
     private val files = setOf("mp4", "m4v", "webm", "mkv")
     private val manifests = setOf("m3u8", "mpd")

@@ -1,14 +1,16 @@
 # Hello1 / StreamBox Free
 
-Android movie catalog and native in-app video player, version **1.7.0**.
+Android movie catalog, native in-app video player and streaming discovery, version **1.8.0**.
 
 ## What changed
 
 - **Playback fixes:** the four built-in films and posters use a pinned copy of the credited open-film media after the old Google sample bucket started returning HTTP 403. Cached built-ins migrate by ID or their legacy source URL, while user-added entries and deleted films retain their saved state.
 - **Local admin fixes:** the local catalog lists only locally editable entries. Removing a row deletes that one entry, including when duplicate entries or cached cloud videos exist.
-- **No YouTube connection:** YouTube searches, embeds, trailer requests, WebViews and app-link handlers have been removed. Every Watch action opens the native StreamBox player.
+- **Watch options:** Hindi/series cards without a saved full video open a native Watch options screen instead of an Unavailable dead end. It checks India-specific streaming, subscription, rental and purchase offers provided by JustWatch via TMDB. Provider links open the supplied official TMDB watch page; JustWatch title search remains available without an API key or if the service is offline. Availability and Hindi audio must be confirmed on the service. Subscription or rental may be required.
+- **Romantic Hindi:** 170 bundled Hindi romance titles, including romantic dramas and comedies, with release years. The catalog works without an API key and shows nine titles per page in three columns and three rows, with Prev/Next and title/year search. Selected titles also have Hindi search aliases. On short screens, the same nine-card page scrolls to keep text and touch targets readable. These are discovery entries, not 170 bundled full-film files.
+- **Native playback:** saved direct video sources continue to play in StreamBox. No YouTube embeds, trailer playback or extracted YouTube streams are used. The player error screen offers Watch options for films whose stream is no longer available.
 - **Home / Watch now:** shows playable saved full films. Includes four complete Blender open short films with credits: Big Buck Bunny, Elephants Dream, Sintel and Tears of Steel. These are short films (about 10–15 minutes), not latest Hindi feature films. Old promotional clips and the placeholder series episode are removed from the default catalog.
-- **Hindi Movies / Latest Hindi / Series:** retain poster grids, search and continuous pagination. Latest Hindi loads 120 available metadata titles initially, subject to source availability. A card offers Watch only when an admin has linked a matching full video by TMDB ID and media type. Otherwise it says Unavailable and shows details. TMDB metadata does not include full-film files.
+- **Hindi Movies / Latest Hindi / Series:** retain poster grids, search and continuous pagination. Latest Hindi loads 120 metadata titles initially, subject to source availability. A card offers native Watch when an admin has linked a matching full video by TMDB ID and media type, and Watch options otherwise. TMDB metadata does not include full-film files.
 - **Music / Videos search:** searches the saved local and Firebase catalog inside the app. Music is empty until music videos are added; it does not search an external video service.
 - **Native player:** HTTPS MP4/M4V/WebM/MKV files, HLS and DASH streams, buffering, error/retry, speed, real quality limits for multi-quality streams, resume position, audio focus and lifecycle cleanup. Codec support depends on the device.
 - **Downloads:** direct files only, using their actual extension. HLS/DASH manifests are not offered as fake MP4 downloads. Long press a card for download, favorites and credits.
@@ -18,7 +20,7 @@ Android movie catalog and native in-app video player, version **1.7.0**.
 
 In **Admin → Catalog → Add full video**, supply the title, category, description/credits and a direct HTTPS media URL ending in `.mp4`, `.m4v`, `.webm`, `.mkv`, `.m3u8` or `.mpd` (query parameters are supported). Use content you own or are authorized to distribute. Web-page links are rejected. Add a poster URL if available.
 
-To enable Watch on a Hindi/series metadata card, set its numeric TMDB ID and select **Full movie** or **Series episode**. Titles are never matched by name because remakes and different media can share a title. An authorized full-movie source must be supplied for each latest Hindi film; this release does not include such a feed.
+To enable native Watch on a Hindi/series metadata card, set its numeric TMDB ID and select **Full movie** or **Series episode**. Playback uses that explicit ID and media type because remakes and different media can share a title. For bundled romance entries, a configured TMDB key can resolve a single exact Hindi title and release year to its ID; ambiguous results use JustWatch search instead. Watch options then also offers the matching saved source, if one exists. An authorized full-movie source must be supplied for each latest Hindi film; this release does not include such a feed.
 
 Firebase `movies` documents use `title`, `category`, `description`, `videoUrl`, `posterUrl`, optional numeric `tmdbId`, and `mediaType` (`movie`, `tv`, `music`, `video`). Existing entries without the new fields remain readable. In local mode, additions stay on that device; configure Firebase to share the catalog across users.
 
@@ -40,7 +42,9 @@ Unit tests cover pagination/retries, stale responses, metadata filtering, direct
 
 Catalog regression tests also cover upgrades from pre-1.7 and 1.7 saved entries, retained TMDB mappings, custom and deleted films, duplicate removal, and separation of local edits from cloud cache entries.
 
-Device checks still required: play/seek/retry each film; background and reopen the player; test Back, screen rotation and offline failure; add a full-video mapping; test HLS/DASH on the target device; and verify downloads. No physical-device test result is implied by a successful APK build.
+Watch/romance regression tests cover all 170 bundled entries, nine-card pagination, page bounds, title/year/Hindi search, country-specific provider offers, safe official links, encoded search queries, missing-key fallback and exact title/year/language resolution without confusing remakes.
+
+Device checks still required: play/seek/retry each film; background and reopen the player; test Back, screen rotation and offline failure; browse/search all romance pages; open official provider links; add a full-video mapping; test HLS/DASH on the target device; and verify downloads. No physical-device test result is implied by a successful APK build.
 
 ## Open-film credits
 

@@ -10,6 +10,7 @@
         android:theme="@style/Theme.StreamBox">
         <activity android:name=".AdminActivity" android:exported="false" />
         <activity android:name=".PlayerActivity" android:screenOrientation="sensorLandscape" android:exported="false" />
+        <activity android:name=".WatchOptionsActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".AuthActivity" android:exported="true">
             <intent-filter>
