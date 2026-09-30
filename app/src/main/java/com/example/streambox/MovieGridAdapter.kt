@@ -16,6 +16,17 @@ class MovieGridAdapter : RecyclerView.Adapter<MovieGridAdapter.Holder>() {
     data class Tile(val title: String, val subtitle: String, val poster: String = "", val action: String,
                     val onClick: () -> Unit, val onLongClick: (() -> Unit)? = null)
     private val tiles = mutableListOf<Tile>()
+    private var rowHeight = 0
+
+    /** Fit three rows in the measured grid, retaining readable cards on small screens. */
+    fun fitThreeRows(viewportHeight: Int, density: Float, fontScale: Float) {
+        if (viewportHeight <= 0) return
+        val minimum = ((120 + 36 * fontScale.coerceAtLeast(1f)) * density).toInt()
+        val next = (viewportHeight / 3).coerceAtLeast(minimum)
+        if (next == rowHeight) return
+        rowHeight = next
+        notifyItemRangeChanged(0, tiles.size)
+    }
 
     fun replace(items: List<Tile>) {
         tiles.clear()
@@ -42,7 +53,7 @@ class MovieGridAdapter : RecyclerView.Adapter<MovieGridAdapter.Holder>() {
             isFocusable = true
         }
         val poster = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        card.addView(poster, LinearLayout.LayoutParams(-1, dp(136)))
+        card.addView(poster, LinearLayout.LayoutParams(-1, 0, 1f))
         val title = TextView(context).apply {
             setTextColor(Color.WHITE)
             textSize = 13f
@@ -50,14 +61,14 @@ class MovieGridAdapter : RecyclerView.Adapter<MovieGridAdapter.Holder>() {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         }
-        card.addView(title, LinearLayout.LayoutParams(-1, 0, 1f))
+        card.addView(title, LinearLayout.LayoutParams(-1, title.lineHeight * 2 + dp(4)))
         val subtitle = TextView(context).apply {
             setTextColor(Color.LTGRAY)
             textSize = 11f
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
-        card.addView(subtitle, LinearLayout.LayoutParams(-1, dp(20)))
+        card.addView(subtitle, LinearLayout.LayoutParams(-1, subtitle.lineHeight + dp(4)))
         val action = TextView(context).apply {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.rgb(155, 12, 28))
@@ -70,6 +81,14 @@ class MovieGridAdapter : RecyclerView.Adapter<MovieGridAdapter.Holder>() {
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
+        if (rowHeight > 0) {
+            val params = holder.itemView.layoutParams as RecyclerView.LayoutParams
+            val height = rowHeight - params.topMargin - params.bottomMargin
+            if (params.height != height) {
+                params.height = height
+                holder.itemView.layoutParams = params
+            }
+        }
         val tile = tiles[position]
         holder.title.text = tile.title
         holder.subtitle.text = tile.subtitle

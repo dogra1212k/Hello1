@@ -104,6 +104,14 @@ class MainActivity : AppCompatActivity() {
             layoutManager = GridLayoutManager(this@MainActivity, 3)
             adapter = cards
             itemAnimator = null
+            addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+                val height = view.height - view.paddingTop - view.paddingBottom
+                val metrics = resources.displayMetrics
+                // Adapter notifications must run outside RecyclerView's layout pass.
+                view.post {
+                    if (!isDestroyed) cards.fitThreeRows(height, metrics.density, resources.configuration.fontScale)
+                }
+            }
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy > 0 && nearEnd() && pager.error == null) loadMore()
@@ -180,7 +188,7 @@ class MainActivity : AppCompatActivity() {
             pager.loading && count == 0 -> "Loading…"
             pager.loading -> "$count titles loaded • Loading more…"
             !pager.hasMore -> if (count + localMovieCount == 0) "No titles found. Try another search." else "All available titles loaded."
-            else -> "$count titles • Watch appears when a full video is available"
+            else -> "$count movie details • Full video required for Watch"
         }
         more.visibility = if (pager.hasMore || pager.error != null) View.VISIBLE else View.GONE
         more.isEnabled = !pager.loading

@@ -1,9 +1,10 @@
 # Hello1 / StreamBox Free
 
-Android movie catalog and native in-app video player, version **1.7.0**.
+Android movie catalog and native in-app video player, version **1.7.1**.
 
 ## What changed
 
+- **3 × 3 grid:** three columns with card heights calculated from the available grid area to show three rows, then scroll for more. Very short screens and large accessibility fonts keep a readable minimum card height and may show fewer rows. Nine cards require at least nine catalog entries; the four built-in films are not duplicated to fill the grid.
 - **No YouTube connection:** YouTube searches, embeds, trailer requests, WebViews and app-link handlers have been removed. Every Watch action opens the native StreamBox player.
 - **Home / Watch now:** shows playable saved full films. Includes four complete Blender open short films with credits: Big Buck Bunny, Elephants Dream, Sintel and Tears of Steel. These are short films (about 10–15 minutes), not latest Hindi feature films. Old promotional clips and the placeholder series episode are removed from the default catalog.
 - **Hindi Movies / Latest Hindi / Series:** retain poster grids, search and continuous pagination. Latest Hindi loads 120 available metadata titles initially, subject to source availability. A card offers Watch only when an admin has linked a matching full video by TMDB ID and media type. Otherwise it says Unavailable and shows details. TMDB metadata does not include full-film files.
