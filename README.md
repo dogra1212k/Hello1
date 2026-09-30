@@ -4,6 +4,8 @@ Android movie catalog and native in-app video player, version **1.7.0**.
 
 ## What changed
 
+- **Playback fixes:** the four built-in films and posters use a pinned copy of the credited open-film media after the old Google sample bucket started returning HTTP 403. Cached built-ins migrate by ID or their legacy source URL, while user-added entries and deleted films retain their saved state.
+- **Local admin fixes:** the local catalog lists only locally editable entries. Removing a row deletes that one entry, including when duplicate entries or cached cloud videos exist.
 - **No YouTube connection:** YouTube searches, embeds, trailer requests, WebViews and app-link handlers have been removed. Every Watch action opens the native StreamBox player.
 - **Home / Watch now:** shows playable saved full films. Includes four complete Blender open short films with credits: Big Buck Bunny, Elephants Dream, Sintel and Tears of Steel. These are short films (about 10–15 minutes), not latest Hindi feature films. Old promotional clips and the placeholder series episode are removed from the default catalog.
 - **Hindi Movies / Latest Hindi / Series:** retain poster grids, search and continuous pagination. Latest Hindi loads 120 available metadata titles initially, subject to source availability. A card offers Watch only when an admin has linked a matching full video by TMDB ID and media type. Otherwise it says Unavailable and shows details. TMDB metadata does not include full-film files.
@@ -36,11 +38,15 @@ The **Android Build** workflow uploads `streambox-debug-apk` and `streambox-chec
 
 Unit tests cover pagination/retries, stale responses, metadata filtering, direct-source validation, rejecting YouTube and web links, file-vs-manifest downloads, exact movie/series mapping, Hindi/music search and catalog JSON compatibility.
 
+Catalog regression tests also cover upgrades from pre-1.7 and 1.7 saved entries, retained TMDB mappings, custom and deleted films, duplicate removal, and separation of local edits from cloud cache entries.
+
 Device checks still required: play/seek/retry each film; background and reopen the player; test Back, screen rotation and offline failure; add a full-video mapping; test HLS/DASH on the target device; and verify downloads. No physical-device test result is implied by a successful APK build.
 
 ## Open-film credits
 
 Credits and license links are included in the in-app **Details & credits** dialogs and in `app/src/main/assets/open_movies.json`.
+
+Media and poster mirror: [andreasbotsikas/DemoVideos](https://github.com/andreasbotsikas/DemoVideos/tree/bf5d196e085a245328c0e272acb936a4aa9dea35), pinned to `bf5d196e085a245328c0e272acb936a4aa9dea35`. The source check verifies film duration and poster bytes; availability of this external mirror can still change.
 
 - [Big Buck Bunny](https://peach.blender.org/about/) — Blender Foundation, CC BY 3.0.
 - [Elephants Dream](https://orange.blender.org/blog/creative-commons-license-2/) — Blender Foundation / Netherlands Media Art Institute, CC BY 2.5.
