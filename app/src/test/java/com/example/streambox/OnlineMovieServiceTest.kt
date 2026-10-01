@@ -83,4 +83,80 @@ class OnlineMovieServiceTest {
         service.close()
     }
 
+    @Test fun watchSourcesKeepMovieAndSeriesIdsSeparate() {
+        val service = OnlineMovieService("key with & punctuation")
+        assertEquals("/3/movie/7/watch/providers", URI(service.watchSourcesUrl(7, "movie")).path)
+        assertEquals("/3/tv/7/watch/providers", URI(service.watchSourcesUrl(7, "tv")).path)
+        assertEquals("key with & punctuation", params(service.watchSourcesUrl(7, "movie"))["api_key"])
+        service.close()
+    }
+
+    @Test fun catalogResolutionRejectsWrongLanguageWrongYearAndAmbiguousRemakes() {
+        val raw = """{"results":[
+            {"id":7,"title":"Love Aaj Kal","release_date":"2009-07-31","original_language":"hi"},
+            {"id":8,"title":"Love Aaj Kal","release_date":"2020-02-14","original_language":"hi"},
+            {"id":9,"title":"Love Aaj Kal","release_date":"2020-01-01","original_language":"en"}
+        ]}"""
+        assertEquals(7, OnlineMovieService.exactHindiMovieId(raw, "Love Aaj Kal", 2009))
+        assertEquals(8, OnlineMovieService.exactHindiMovieId(raw, "Love Aaj Kal", 2020))
+        assertEquals(0, OnlineMovieService.exactHindiMovieId(raw, "Love Aaj Kal", 2021))
+        val ambiguous = """{"results":[
+            {"id":7,"title":"Film","release_date":"2020-01-01","original_language":"hi"},
+            {"id":8,"title":"Film","release_date":"2020-01-01","original_language":"hi"}
+        ]}"""
+        assertEquals(0, OnlineMovieService.exactHindiMovieId(ambiguous, "Film", 2020))
+    }
+
+    @Test fun knownIdLoadsIndiaProvidersWithoutTitleSearch() {
+        val calls = mutableListOf<String>()
+        val service = OnlineMovieService("key") { url ->
+            calls += url
+            """{"results":{"IN":{"flatrate":[{"provider_name":"Service"}]}}}"""
+        }
+        val latch = CountDownLatch(1)
+        var result: WatchSources? = null
+        var resultId = 0
+        var resultError: String? = null
+        service.loadWatchSources(7, "tv", "Film", 2020) { id, sources, error ->
+            resultId = id; result = sources; resultError = error; latch.countDown()
+        }
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        assertEquals(7, resultId)
+        assertNull(resultError)
+        assertEquals(listOf(WatchOffer("Service", "Subscription")), result!!.offers)
+        assertEquals(1, calls.size)
+        assertEquals("/3/tv/7/watch/providers", URI(calls.single()).path)
+        service.close()
+    }
+
+    @Test fun seededMovieResolvesTitleAndYearBeforeFetchingExactProviders() {
+        val calls = mutableListOf<String>()
+        val service = OnlineMovieService("key") { url ->
+            calls += url
+            if (URI(url).path == "/3/search/movie") """{"results":[
+                {"id":7,"title":"Film & Love","release_date":"2020-01-01","original_language":"hi"}
+            ]}""" else """{"results":{"IN":{}}}"""
+        }
+        val latch = CountDownLatch(1)
+        var resultId = 0
+        service.loadWatchSources(0, "movie", "Film & Love", 2020) { id, _, _ -> resultId = id; latch.countDown() }
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        assertEquals(7, resultId)
+        assertEquals(2, calls.size)
+        assertEquals("Film & Love", params(calls.first())["query"])
+        assertEquals("2020", params(calls.first())["year"])
+        assertEquals("/3/movie/7/watch/providers", URI(calls.last()).path)
+        service.close()
+    }
+
+    @Test fun missingWatchKeyDoesNotAttemptNetworkAndAllowsDiscoveryFallback() {
+        val service = OnlineMovieService("") { error("Network should not be called") }
+        val latch = CountDownLatch(1)
+        var resultError: String? = null
+        service.loadWatchSources(7, "movie", "Film", 2020) { _, _, error -> resultError = error; latch.countDown() }
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        assertNotNull(resultError)
+        service.close()
+    }
+
 }

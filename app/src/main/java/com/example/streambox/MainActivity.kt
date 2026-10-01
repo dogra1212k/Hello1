@@ -28,6 +28,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var heading: TextView
     private lateinit var status: TextView
     private lateinit var more: Button
+    private lateinit var searchTypes: LinearLayout
+    private lateinit var pageControls: LinearLayout
+    private lateinit var previousPage: Button
+    private lateinit var nextPage: Button
+    private lateinit var pageInfo: TextView
+    private var romancePage = 0
+    private val romanticMovies by lazy {
+        assets.open("hindi_romance.json").bufferedReader().use { RomanceCatalog.decode(it.readText()) }
+    }
     private var request: Future<*>? = null
     private var feed: CatalogFeed? = null
     private var screen = "WATCH"
@@ -51,7 +60,8 @@ class MainActivity : AppCompatActivity() {
         savedMovies = catalog.getMovies()
         val restored = savedInstanceState?.getString("screen") ?: "WATCH"
         val restoredFeed = runCatching { CatalogFeed.valueOf(restored) }.getOrNull()
-        if (restoredFeed != null) openFeed(restoredFeed, query) else showSaved(restored, query)
+        if (restored == "ROMANCE") showRomance(query, savedInstanceState?.getInt("romancePage") ?: 0)
+        else if (restoredFeed != null) openFeed(restoredFeed, query) else showSaved(restored, query)
     }
 
     private fun buildUi() {
@@ -66,6 +76,11 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        top.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_streambox_logo)
+            contentDescription = "StreamBox A logo"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(6) })
         top.addView(label("STREAMBOX", 25f).apply {
             setTextColor(Color.rgb(229, 9, 20)); setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -87,13 +102,14 @@ class MainActivity : AppCompatActivity() {
             setOnEditorActionListener { _, _, _ -> runSearch(); true }
         }
         root.addView(searchBox, LinearLayout.LayoutParams(-1, dp(48)))
-        val searchTypes = LinearLayout(this)
+        searchTypes = LinearLayout(this)
         searchTypes.addView(button("All") { runSearch() }, LinearLayout.LayoutParams(0, dp(44), 1f))
         searchTypes.addView(button("Music") { showSaved("MUSIC", searchBox.text.toString().trim()) }, LinearLayout.LayoutParams(0, dp(44), 1f))
         searchTypes.addView(button("Videos") { showSaved("LOCAL", searchBox.text.toString().trim()) }, LinearLayout.LayoutParams(0, dp(44), 1f))
         root.addView(searchTypes)
         val tabs = LinearLayout(this)
         listOf("Home" to { showSaved("WATCH") }, "Hindi Movies" to { openFeed(CatalogFeed.HOME) },
+            "Romantic Hindi" to { showRomance() },
             "Latest Hindi" to { openFeed(CatalogFeed.LATEST_HINDI) }, "Music" to { showSaved("MUSIC") },
             "Series" to { openFeed(CatalogFeed.SERIES) }, "My Videos" to { showSaved("LOCAL") })
             .forEach { (name, action) -> tabs.addView(button(name, action), LinearLayout.LayoutParams(-2, dp(44))) }
@@ -101,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         heading = label("", 20f).apply { setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(8), 0, dp(4)) }
         root.addView(heading)
         grid = RecyclerView(this).apply {
-            layoutManager = GridLayoutManager(this@MainActivity, 3)
+            layoutManager = GridLayoutManager(this@MainActivity, RomanceCatalog.COLUMNS)
             adapter = cards
             itemAnimator = null
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -109,10 +125,21 @@ class MainActivity : AppCompatActivity() {
                     if (dy > 0 && nearEnd() && pager.error == null) loadMore()
                 }
             })
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (screen == "ROMANCE") cards.fitThreeRows(height)
+            }
         }
         root.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
         status = label("", 12f).apply { setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, dp(4)) }
         root.addView(status)
+        pageControls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        previousPage = button("‹ Prev") { romancePage--; renderRomance() }
+        nextPage = button("Next ›") { romancePage++; renderRomance() }
+        pageInfo = label("", 13f).apply { gravity = Gravity.CENTER }
+        pageControls.addView(previousPage, LinearLayout.LayoutParams(0, dp(44), 1f))
+        pageControls.addView(pageInfo, LinearLayout.LayoutParams(0, dp(44), 1f))
+        pageControls.addView(nextPage, LinearLayout.LayoutParams(0, dp(44), 1f))
+        root.addView(pageControls)
         more = button("Load more") { if (feed != null) loadMore() else syncCloud() }
         root.addView(more, LinearLayout.LayoutParams(-1, dp(44)))
         setContentView(root)
@@ -128,6 +155,10 @@ class MainActivity : AppCompatActivity() {
         cards.replace(emptyList())
         grid.scrollToPosition(0)
         more.visibility = View.GONE
+        pageControls.visibility = View.GONE
+        searchTypes.visibility = View.VISIBLE
+        searchBox.hint = "Search movies, music & videos"
+        cards.normalRows()
         status.text = ""
     }
 
@@ -180,7 +211,7 @@ class MainActivity : AppCompatActivity() {
             pager.loading && count == 0 -> "Loading…"
             pager.loading -> "$count titles loaded • Loading more…"
             !pager.hasMore -> if (count + localMovieCount == 0) "No titles found. Try another search." else "All available titles loaded."
-            else -> "$count titles • Watch appears when a full video is available"
+            else -> "$count titles • Watch in-app or find streaming options"
         }
         more.visibility = if (pager.hasMore || pager.error != null) View.VISIBLE else View.GONE
         more.isEnabled = !pager.loading
@@ -194,7 +225,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun runSearch() {
         val text = searchBox.text.toString().trim()
-        if (text.isBlank()) showSaved("WATCH") else openFeed(CatalogFeed.SEARCH, text)
+        if (screen == "ROMANCE") showRomance(text)
+        else if (text.isBlank()) showSaved("WATCH") else openFeed(CatalogFeed.SEARCH, text)
+    }
+
+    private fun showRomance(search: String = "", page: Int = 0) {
+        resetScreen("ROMANCE")
+        query = search
+        romancePage = page
+        searchBox.setText(search)
+        searchBox.hint = "Search romantic Hindi movies or year"
+        searchTypes.visibility = View.GONE
+        renderRomance()
+    }
+
+    private fun renderRomance() {
+        val page = RomanceCatalog.page(romanticMovies, query, romancePage)
+        romancePage = page.index
+        heading.text = "Romantic Hindi · ${page.total}"
+        cards.replace(page.movies.map { movie ->
+            MovieGridAdapter.Tile(movie.title, "${movie.year} · Hindi romance", action = "▶ Watch options",
+                onClick = { startActivity(WatchOptionsActivity.createIntent(this, movie.title, year = movie.year)) },
+                romance = true)
+        })
+        cards.fitThreeRows(grid.height)
+        grid.scrollToPosition(0)
+        status.text = if (page.total == 0) "No matching movies. Try another title or year."
+            else "3 × 3 per page · Find official streaming options"
+        more.visibility = View.GONE
+        pageControls.visibility = if (page.pages > 0) View.VISIBLE else View.GONE
+        previousPage.isEnabled = page.index > 0
+        nextPage.isEnabled = page.index + 1 < page.pages
+        pageInfo.text = "${page.index + 1} / ${page.pages}"
     }
 
     private fun searchMovies() = savedMovies.filter { MediaSourcePolicy.matches(it, query) }
@@ -233,7 +295,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshCards() {
-        if (feed == null) renderSaved() else {
+        if (screen == "ROMANCE") renderRomance()
+        else if (feed == null) renderSaved() else {
             val local = if (feed == CatalogFeed.SEARCH) searchMovies() else emptyList()
             localMovieCount = local.size
             cards.replace(local.map(::localTile) + pager.items.map(::onlineTile))
@@ -256,7 +319,7 @@ class MainActivity : AppCompatActivity() {
         if (cloudLoading || !firebase.isAvailable() || firebase.currentEmail() == null) return
         cloudLoading = true
         cloudError = null
-        if (feed == null) renderSaved()
+        if (feed == null && screen != "ROMANCE") renderSaved()
         firebase.loadMovies { movies, _ -> runOnUiThread {
             if (isDestroyed || isFinishing) return@runOnUiThread
             cloudLoading = false
@@ -274,34 +337,39 @@ class MainActivity : AppCompatActivity() {
         return MovieGridAdapter.Tile(movie.title,
             listOf(movie.releaseDate, if (movie.mediaType == "tv") "Series" else "Movie")
                 .filter { it.isNotBlank() }.joinToString(" · "),
-            movie.posterUrl, if (stream != null) "▶ Watch" else "Unavailable", onClick = {
-                if (stream != null) play(stream) else android.app.AlertDialog.Builder(this)
-                    .setTitle(movie.title)
-                    .setMessage(listOf(movie.overview, "Full video abhi StreamBox mein available nahi hai.")
-                        .filter { it.isNotBlank() }.joinToString("\n\n"))
-                    .setPositiveButton("OK", null).show()
+            movie.posterUrl, if (stream != null) "▶ Watch" else "▶ Watch options", onClick = {
+                if (stream != null) play(stream) else startActivity(WatchOptionsActivity.createIntent(
+                    this, movie.title, movie.id, movie.mediaType, movie.releaseDate.take(4).toIntOrNull() ?: 0,
+                    movie.overview))
             })
     }
 
     private fun localTile(movie: Movie) = MovieGridAdapter.Tile(movie.title, movie.category, movie.posterUrl,
-        if (MediaSourcePolicy.isPlayable(movie.videoUrl)) "▶ Watch" else "Unavailable",
+        if (MediaSourcePolicy.isPlayable(movie.videoUrl)) "▶ Watch"
+        else if (movie.mediaType in setOf("movie", "tv")) "▶ Watch options" else "Details",
         onClick = { play(movie) }, onLongClick = { movieOptions(movie) })
 
     private fun play(movie: Movie) {
         if (!MediaSourcePolicy.isPlayable(movie.videoUrl)) {
-            Toast.makeText(this, "Is video ka direct stream available nahi hai.", Toast.LENGTH_LONG).show()
+            if (movie.mediaType in setOf("movie", "tv")) startActivity(WatchOptionsActivity.createIntent(
+                this, movie.title, movie.tmdbId, movie.mediaType, overview = movie.description))
+            else android.app.AlertDialog.Builder(this).setTitle(movie.title)
+                .setMessage(movie.description.ifBlank { "No full video is linked to this entry yet." })
+                .setPositiveButton("OK", null).show()
             return
         }
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("title", movie.title); putExtra("url", movie.videoUrl)
             putExtra("description", movie.description)
+            putExtra("tmdbId", movie.tmdbId); putExtra("mediaType", movie.mediaType)
         })
     }
 
     private fun movieOptions(movie: Movie) {
         val favorite = prefs.getBoolean(movie.title, false)
         val actions = mutableListOf<Pair<String, () -> Unit>>()
-        if (MediaSourcePolicy.isPlayable(movie.videoUrl)) actions += "Watch" to { play(movie) }
+        if (MediaSourcePolicy.isPlayable(movie.videoUrl) || movie.mediaType in setOf("movie", "tv"))
+            actions += (if (MediaSourcePolicy.isPlayable(movie.videoUrl)) "Watch" else "Watch options") to { play(movie) }
         if (MediaSourcePolicy.isDownloadable(movie.videoUrl)) actions += "Download" to {
             MovieDownloads.start(this, movie.title, movie.videoUrl)
         }
@@ -321,6 +389,7 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("screen", screen)
         outState.putString("query", query)
+        outState.putInt("romancePage", romancePage)
         if (::searchBox.isInitialized) outState.putString("search", searchBox.text.toString())
         super.onSaveInstanceState(outState)
     }

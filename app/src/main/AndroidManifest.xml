@@ -3,13 +3,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_streambox_logo"
-        android:roundIcon="@drawable/ic_streambox_logo"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:logo="@drawable/ic_streambox_logo"
         android:label="StreamBox Free"
         android:theme="@style/Theme.StreamBox">
         <activity android:name=".AdminActivity" android:exported="false" />
         <activity android:name=".PlayerActivity" android:screenOrientation="sensorLandscape" android:exported="false" />
+        <activity android:name=".WatchOptionsActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".AuthActivity" android:exported="true">
             <intent-filter>

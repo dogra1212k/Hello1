@@ -17,8 +17,8 @@ android {
         applicationId = "com.example.streambox"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.7.0"
+        versionCode = 11
+        versionName = "1.8.1"
         buildConfigField("String", "TMDB_API_KEY", "\"" + tmdbApiKey + "\"")
     }
 

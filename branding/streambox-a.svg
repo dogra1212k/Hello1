@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108" role="img" aria-labelledby="title">
+  <title id="title">StreamBox ribbon A logo</title>
+  <defs>
+    <linearGradient id="ribbon" gradientUnits="userSpaceOnUse" x1="49" y1="20" x2="91" y2="94">
+      <stop offset="0" stop-color="#FF2933"/>
+      <stop offset="0.45" stop-color="#E50914"/>
+      <stop offset="1" stop-color="#C40812"/>
+    </linearGradient>
+  </defs>
+  <path fill="#000000" d="M0,0h108v108H0Z"/>
+  <path fill="#B20710" d="M49,20 L63,20 L37,89 C31,90 24,91 18,94 Z"/>
+  <path fill="#D20D18" d="M39,65 L71,65 L76,79 L34,79 Z"/>
+  <path fill="#83050C" d="M60,65 L71,65 L76,79 L64,79 Z"/>
+  <path fill="url(#ribbon)" d="M49,20 L63,20 L91,94 C85,91 78,90 72,89 Z"/>
+</svg>

@@ -84,7 +84,7 @@ class AdminActivity : AppCompatActivity() {
             }
         } else {
             body.addView(info("Registered users", users.all.size.toString()))
-            body.addView(info("Catalog titles", catalog.getMovies().size.toString()))
+            body.addView(info("Catalog titles", catalog.getLocalMovies().size.toString()))
         }
     }
 
@@ -170,7 +170,7 @@ class AdminActivity : AppCompatActivity() {
                     showCatalog()
                 }
             })
-            catalog.getMovies().forEachIndexed { index,movie ->
+            catalog.getLocalMovies().forEachIndexed { index,movie ->
                 body.addView(localMovieRow(index,movie))
             }
         }

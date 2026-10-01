@@ -33,6 +33,31 @@ class OnlineMovieService(
         }
     }
 
+    fun loadWatchSources(id: Int, type: String, title: String, year: Int,
+                         callback: (Int, WatchSources?, String?) -> Unit): Future<*> = executor.submit {
+        var resolvedId = id.coerceAtLeast(0)
+        try {
+            check(isConfigured()) { "Movie service access is unavailable." }
+            require(type == "movie" || type == "tv") { "Unsupported media type." }
+            if (resolvedId == 0 && type == "movie" && year > 0) {
+                val url = "https://api.themoviedb.org/3/search/movie?api_key=${enc(apiKey)}" +
+                    "&language=en-IN&include_adult=false&query=${enc(title)}&year=$year"
+                resolvedId = exactHindiMovieId(transport(url), title, year)
+            }
+            if (Thread.currentThread().isInterrupted) return@submit
+            val sources = if (resolvedId > 0) WatchSources.decode(transport(watchSourcesUrl(resolvedId, type)))
+                else WatchSources(emptyList(), null)
+            if (!Thread.currentThread().isInterrupted) callback(resolvedId, sources, null)
+        } catch (e: Exception) {
+            if (!Thread.currentThread().isInterrupted) callback(resolvedId, null, friendlyError(e))
+        }
+    }
+
+    internal fun watchSourcesUrl(id: Int, type: String): String {
+        require(id > 0 && type in setOf("movie", "tv"))
+        return "https://api.themoviedb.org/3/$type/$id/watch/providers?api_key=${enc(apiKey)}"
+    }
+
     internal fun pageUrl(feed: CatalogFeed, page: Int, query: String, today: String): String {
         require(page in 1..CatalogPager.MAX_PAGES) { "End of available catalog." }
         val path = when (feed) {
@@ -59,6 +84,23 @@ class OnlineMovieService(
     fun close() { executor.shutdownNow() }
 
     companion object {
+        /** Resolve catalog metadata only. Native playback still requires an explicit TMDB ID mapping. */
+        internal fun exactHindiMovieId(body: String, title: String, year: Int): Int {
+            fun normalized(value: String) = value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+            val expected = normalized(title)
+            if (expected.isBlank() || year !in 1900..2100) return 0
+            val entries = JSONObject(body).optJSONArray("results") ?: return 0
+            val ids = (0 until entries.length()).mapNotNull { index ->
+                val entry = entries.optJSONObject(index) ?: return@mapNotNull null
+                if (entry.optBoolean("adult") || entry.optString("original_language") != "hi" ||
+                    entry.optString("release_date").take(4) != year.toString()) return@mapNotNull null
+                if (listOf("title", "original_title").none { normalized(entry.optString(it)) == expected })
+                    return@mapNotNull null
+                entry.optInt("id").takeIf { it > 0 }
+            }.distinct()
+            return ids.singleOrNull() ?: 0
+        }
+
         internal fun parsePage(body: String, feed: CatalogFeed): OnlinePage {
             val root = JSONObject(body)
             val arr = root.optJSONArray("results") ?: error("Invalid catalog response. Please retry.")
