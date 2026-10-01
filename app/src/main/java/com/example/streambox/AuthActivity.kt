@@ -32,14 +32,24 @@ class AuthActivity : AppCompatActivity() {
             setPadding(dp(22), dp(22), dp(22), dp(22))
             setBackgroundColor(Color.rgb(25,25,25))
         }
-        root.addView(TextView(this).apply {
+        val brand = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(20))
+        }
+        brand.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_streambox_logo)
+            contentDescription = "StreamBox A logo"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(64), dp(64)))
+        brand.addView(TextView(this).apply {
             text="STREAMBOX"
-            textSize=34f
+            textSize=30f
             setTextColor(Color.rgb(229,9,20))
             setTypeface(typeface, Typeface.BOLD)
             gravity=Gravity.CENTER
-            setPadding(0,0,0,dp(20))
+            setPadding(dp(6),0,0,0)
         })
+        root.addView(brand, LinearLayout.LayoutParams(-1,-2))
         card.addView(TextView(this).apply {
             text=title
             textSize=24f

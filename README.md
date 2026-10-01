@@ -1,9 +1,10 @@
 # Hello1 / StreamBox Free
 
-Android movie catalog, native in-app video player and streaming discovery, version **1.8.0**.
+Android movie catalog, native in-app video player and streaming discovery, version **1.8.1**.
 
 ## What changed
 
+- **App logo:** an original red ribbon letter A on black, with shaded folds. Used by the launcher, login screen, home header and poster placeholders. Android 8+ uses adaptive foreground/background layers; Android 13+ includes a monochrome layer for themed icons. Older devices use matching PNGs at five launcher densities. Editable artwork is in `branding/streambox-a.svg`.
 - **Playback fixes:** the four built-in films and posters use a pinned copy of the credited open-film media after the old Google sample bucket started returning HTTP 403. Cached built-ins migrate by ID or their legacy source URL, while user-added entries and deleted films retain their saved state.
 - **Local admin fixes:** the local catalog lists only locally editable entries. Removing a row deletes that one entry, including when duplicate entries or cached cloud videos exist.
 - **Watch options:** Hindi/series cards without a saved full video open a native Watch options screen instead of an Unavailable dead end. It checks India-specific streaming, subscription, rental and purchase offers provided by JustWatch via TMDB. Provider links open the supplied official TMDB watch page; JustWatch title search remains available without an API key or if the service is offline. Availability and Hindi audio must be confirmed on the service. Subscription or rental may be required.

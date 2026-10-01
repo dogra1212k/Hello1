@@ -76,6 +76,11 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        top.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_streambox_logo)
+            contentDescription = "StreamBox A logo"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(6) })
         top.addView(label("STREAMBOX", 25f).apply {
             setTextColor(Color.rgb(229, 9, 20)); setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))

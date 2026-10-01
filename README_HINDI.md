@@ -1,4 +1,6 @@
-# StreamBox 1.8.0
+# StreamBox 1.8.1
+
+- नया लाल ribbon-style **A logo** app icon, login और home header में है। Android के adaptive और themed icons के लिए भी A logo जोड़ा गया है।
 
 - Home पर पूरी playable films चलती हैं। चार Blender short films शामिल हैं; ये latest Hindi feature movies नहीं हैं।
 - पुराने Google sample links की जगह उपलब्ध open-film mirror इस्तेमाल होता है। पहले से saved built-in links भी update होते हैं; आपके custom videos और deleted entries सुरक्षित रहते हैं।
